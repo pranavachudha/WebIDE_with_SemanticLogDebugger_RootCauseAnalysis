@@ -595,17 +595,18 @@ except:
                 if (!openTabs.includes(id)) setOpenTabs([...openTabs, id]);
                 setActiveId(id);
                 setRca(null);
-                if (termInstance.current) {
-                    termInstance.current.clear();
-                    termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n>>> ');
-                }
+                rebootWorker();
             };
 
             const closeTab = (e, id) => {
                 e.stopPropagation();
                 const newTabs = openTabs.filter(t => t !== id);
                 setOpenTabs(newTabs);
-                if (activeId === id) setActiveId(newTabs.length > 0 ? newTabs[newTabs.length - 1] : null);
+                if (activeId === id) {
+                    const nextId = newTabs.length > 0 ? newTabs[newTabs.length - 1] : null;
+                    setActiveId(nextId);
+                    rebootWorker();
+                }
             };
 
             const downloadWorkspace = async () => {
@@ -726,66 +727,82 @@ except:
                 document.addEventListener('mouseup', onMouseUp);
             };
 
+            const rebootWorker = (fromRun = false) => {
+                if (workerRef.current) {
+                    workerRef.current.terminate();
+                }
+                isWaitingForInputRef.current = false;
+                pendingInputUidRef.current = null;
+                isReplRef.current = !fromRun;
+                currentLineRef.current = '';
+                
+                if (termInstance.current) {
+                    termInstance.current.clear();
+                    termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n');
+                    if (!fromRun) {
+                        termInstance.current.write('>>> ');
+                    }
+                }
+                
+                setEngineReady(false);
+                const w = new Worker('/pyworker.js?t=' + Date.now());
+                w.onmessage = (e) => {
+                    const { type, msg, uid, id, error, result } = e.data;
+                    if (type === 'stdout' || type === 'stderr') {
+                        if (termInstance.current) {
+                            const colorPrefix = type === 'stderr' ? '\x1b[31m' : '';
+                            const colorSuffix = type === 'stderr' ? '\x1b[0m' : '';
+                            termInstance.current.write(colorPrefix + msg.replace(/\n/g, '\r\n') + colorSuffix);
+                        }
+                    } else if (type === 'done' || type === 'error') {
+                        if (type === 'error' && termInstance.current) {
+                            termInstance.current.write('\x1b[31m' + error.replace(/\n/g, '\r\n') + '\x1b[0m\r\n');
+                        }
+                        if (type === 'done' && result !== undefined && termInstance.current) {
+                            termInstance.current.write(String(result).replace(/\n/g, '\r\n') + '\r\n');
+                        }
+                        
+                        if (id === 'run_main' || id.startsWith('repl_')) {
+                            if (termInstance.current) termInstance.current.write('>>> ');
+                            isReplRef.current = true;
+                        }
+
+                        if (type === 'error') {
+                            const currentCode = editorInstance.current ? editorInstance.current.getValue() : '';
+                            const base = analyze(error, currentCode);
+                            setRca({ ...base, llmLoading: true, streamText: '' });
+                            streamLLM(
+                                base.ins.title, error, base.lineCode,
+                                (accumulated) => setRca(p => p ? { ...p, streamText: accumulated } : p),
+                                (finalText) => {
+                                    const parsed = parseStreamedSections(finalText);
+                                    setRca(p => p ? { ...p, llmLoading: false, streamText: finalText, ins: { title: base.ins.title, symptom: parsed.symptom || base.ins.symptom, cause: parsed.cause || base.ins.cause, resolution: parsed.resolution || base.ins.resolution } } : p);
+                                },
+                                () => setRca(p => p ? { ...p, llmLoading: false, streamText: null } : p)
+                            );
+                        }
+                    }
+                };
+                
+                setWorker(w);
+                workerRef.current = w;
+                setEngineReady(true);
+            };
+
             // Initialize Service Worker and Web Worker
             useEffect(() => {
-                let w = null;
-                const initWorker = () => {
-                    w = new Worker('/pyworker.js?t=' + Date.now());
-                    w.onmessage = (e) => {
-                        const { type, msg, uid, id, error, result } = e.data;
-                        if (type === 'stdout' || type === 'stderr') {
-                            if (termInstance.current) {
-                                const colorPrefix = type === 'stderr' ? '\x1b[31m' : '';
-                                const colorSuffix = type === 'stderr' ? '\x1b[0m' : '';
-                                termInstance.current.write(colorPrefix + msg.replace(/\n/g, '\r\n') + colorSuffix);
-                            }
-                        } else if (type === 'done' || type === 'error') {
-                            if (type === 'error' && termInstance.current) {
-                                termInstance.current.write('\x1b[31m' + error.replace(/\n/g, '\r\n') + '\x1b[0m\r\n');
-                            }
-                            if (type === 'done' && result !== undefined && termInstance.current) {
-                                termInstance.current.write(String(result).replace(/\n/g, '\r\n') + '\r\n');
-                            }
-                            
-                            if (id === 'run_main' || id.startsWith('repl_')) {
-                                if (termInstance.current) termInstance.current.write('>>> ');
-                                isReplRef.current = true;
-                            }
-
-                            if (type === 'error') {
-                                const currentCode = editorInstance.current ? editorInstance.current.getValue() : '';
-                                const base = analyze(error, currentCode);
-                                setRca({ ...base, llmLoading: true, streamText: '' });
-                                streamLLM(
-                                    base.ins.title, error, base.lineCode,
-                                    (accumulated) => setRca(p => p ? { ...p, streamText: accumulated } : p),
-                                    (finalText) => {
-                                        const parsed = parseStreamedSections(finalText);
-                                        setRca(p => p ? { ...p, llmLoading: false, streamText: finalText, ins: { title: base.ins.title, symptom: parsed.symptom || base.ins.symptom, cause: parsed.cause || base.ins.cause, resolution: parsed.resolution || base.ins.resolution } } : p);
-                                    },
-                                    () => setRca(p => p ? { ...p, llmLoading: false, streamText: null } : p)
-                                );
-                            }
-                        }
-                    };
-                    
-                    setWorker(w);
-                    workerRef.current = w;
-                    setEngineReady(true);
-                };
-
                 if ('serviceWorker' in navigator) {
                     navigator.serviceWorker.register('/sw.js').then(() => {
                         if (navigator.serviceWorker.controller) {
-                            initWorker();
+                            rebootWorker();
                         } else {
                             navigator.serviceWorker.addEventListener('controllerchange', () => {
-                                if (!w) initWorker();
+                                if (!workerRef.current) rebootWorker();
                             });
                         }
                     }).catch(err => {
                         console.error("SW Registration failed:", err);
-                        initWorker(); // Fallback
+                        rebootWorker(); // Fallback
                     });
                     
                     navigator.serviceWorker.addEventListener('message', (event) => {
@@ -796,10 +813,10 @@ except:
                         }
                     });
                 } else {
-                    initWorker();
+                    rebootWorker();
                 }
 
-                return () => { if (w) w.terminate(); };
+                return () => { if (workerRef.current) workerRef.current.terminate(); };
             }, []);
 
             const provideInput = async (value) => {
@@ -818,15 +835,12 @@ except:
             };
 
             const run = async () => {
-                if (!workerRef.current || !editorInstance.current) return;
+                if (!editorInstance.current) return;
                 const currentCode = editorInstance.current.getValue() || '';
                 setRca(null);
                 
-                if (termInstance.current) {
-                    termInstance.current.clear();
-                    termInstance.current.write('\x1bc'); // Full reset
-                    termInstance.current.write('PYGLIDE SYSTEM CONSOLE\r\n');
-                }
+                rebootWorker(true);
+                
                 isReplRef.current = false;
                 isWaitingForInputRef.current = false;
                 currentLineRef.current = '';
