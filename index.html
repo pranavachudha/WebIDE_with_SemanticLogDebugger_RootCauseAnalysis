@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PyGlide | Premium Python IDE</title>
+    <!-- Stable Dependencies -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0c;
+            --sidebar: #070708;
+            --accent: #3b82f6;
+            --accent-dim: rgba(59, 130, 246, 0.15);
+            --border: rgba(255,255,255,0.08);
+            --success: #10b981;
+            --error: #ef4444;
+            --text: #f8fafc;
+            --text-dim: #94a3b8;
+            --editor-bg: #0f0f11;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; overflow: hidden; height: 100vh; }
+        
+        .layout { display: flex; height: 100vh; width: 100vw; }
+        .sidebar { width: 240px; background: var(--sidebar); border-right: 1px solid var(--border); padding: 2rem 1rem; display: flex; flex-direction: column; }
+        .main { flex: 1; display: flex; flex-direction: column; position: relative; }
+        
+        .toolbar { height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 2rem; background: rgba(10, 10, 12, 0.8); backdrop-filter: blur(10px); }
+        .editor-zone { flex: 1; position: relative; background: var(--editor-bg); display: flex; overflow: hidden; }
+        
+        .editor-container { position: relative; flex: 1; display: flex; overflow: hidden; }
+        
+        /* ALIGNED LINE NUMBERS */
+        .line-numbers { 
+            width: 50px; 
+            background: #070708; 
+            color: #3f3f46; 
+            padding: 20px 0; 
+            text-align: center; 
+            font-family: 'JetBrains Mono', monospace; 
+            font-size: 14px; 
+            line-height: 1.6; 
+            user-select: none; 
+            border-right: 1px solid var(--border); 
+            z-index: 2; 
+            overflow-y: hidden; 
+        }
+        
+        .editor-view { position: relative; flex: 1; overflow: auto; }
+        .code-input, .code-highlight { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            min-height: 100%; 
+            padding: 20px; 
+            font-family: 'JetBrains Mono', monospace; 
+            font-size: 14px; 
+            line-height: 1.6; 
+            white-space: pre; 
+            border: none; 
+            outline: none; 
+            tab-size: 4; 
+        }
+        .code-input { background: transparent; color: transparent; caret-color: #fff; z-index: 2; resize: none; overflow: hidden; -webkit-text-fill-color: transparent; }
+        .code-highlight { z-index: 1; pointer-events: none; }
+        
+        .token-keyword { color: #c678dd; font-weight: 600; }
+        .token-string { color: #98c379; }
+        .token-comment { color: #5c6370; font-style: italic; }
+        .token-function { color: #61afef; }
+        .token-number { color: #d19a66; }
+        
+        .terminal { height: 200px; background: #070708; border-top: 1px solid var(--border); padding: 15px; font-family: 'JetBrains Mono', monospace; overflow-y: auto; font-size: 13px; z-index: 50; }
+        
+        /* ENHANCED RCA PANEL */
+        .rca-panel { 
+            width: 500px; /* Wider for better reading */
+            background: rgba(10, 10, 12, 0.98); 
+            border-left: 1px solid var(--border); 
+            backdrop-filter: blur(40px); 
+            padding: 2.5rem; 
+            overflow-y: auto; 
+            z-index: 100; 
+            box-shadow: -30px 0 60px rgba(0,0,0,0.6); 
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+        
+        .rca-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; }
+        .rca-title { font-size: 0.75rem; font-weight: 800; color: var(--text-dim); letter-spacing: 0.15em; text-transform: uppercase; }
+        
+        .diagnostic-card { 
+            background: linear-gradient(145deg, rgba(59, 130, 246, 0.08) 0%, rgba(59, 130, 246, 0.02) 100%); 
+            border: 1px solid rgba(59, 130, 246, 0.2); 
+            padding: 1.5rem; 
+            border-radius: 12px; 
+        }
+        
+        .diagnostic-section { margin-bottom: 1.25rem; }
+        .diagnostic-section:last-child { margin-bottom: 0; }
+        .diagnostic-label { font-size: 0.65rem; font-weight: 800; color: var(--accent); margin-bottom: 0.5rem; text-transform: uppercase; letter-spacing: 0.1em; }
+        .diagnostic-text { font-size: 0.9rem; line-height: 1.6; color: #e2e8f0; font-weight: 400; }
+        
+        /* GRAPH-BASED RCA STYLES */
+        .graph-container { position: relative; padding: 10px 0 20px 30px; }
+        .graph-node { position: relative; background: rgba(255,255,255,0.02); border: 1px solid var(--border); padding: 1.25rem; border-radius: 12px; margin-bottom: 2.5rem; z-index: 10; box-shadow: 0 4px 20px rgba(0,0,0,0.2); }
+        .graph-node.root { border-color: rgba(16, 185, 129, 0.5); background: rgba(16, 185, 129, 0.05); }
+        .graph-node.exception { border-color: rgba(239, 68, 68, 0.5); background: rgba(239, 68, 68, 0.05); }
+        
+        .graph-edge { position: absolute; left: -15px; top: 0; width: 2px; height: 100%; border-left: 2px dashed rgba(255,255,255,0.2); }
+        .graph-arrow { position: absolute; left: -21px; bottom: -25px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid rgba(255,255,255,0.2); }
+        
+        .node-tag { position: absolute; right: 15px; top: -10px; font-size: 9px; font-weight: 900; padding: 3px 10px; border-radius: 12px; letter-spacing: 0.05em; }
+        .node-tag.root { background: var(--success); color: #000; box-shadow: 0 0 15px rgba(16, 185, 129, 0.4); }
+        .node-tag.exception { background: var(--error); color: #fff; box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
+        
+        .recommendation-card { background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.2); padding: 1.5rem; border-radius: 16px; margin-top: 3rem; }
+        .btn { background: var(--accent); color: #000; border: none; padding: 8px 16px; border-radius: 4px; font-weight: 700; cursor: pointer; font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; transition: all 0.2s ease; }
+        .btn:hover:not(:disabled) { background: #60a5fa; transform: translateY(-1px); }
+        .btn-secondary { background: #222; color: #fff; border: 1px solid var(--border); }
+        .btn-secondary:hover { background: #333; }
+        
+        .logo { font-size: 0.85rem; font-weight: 900; letter-spacing: 2px; color: var(--accent); margin-bottom: 3rem; padding-left: 10px; }
+        .file-item { padding: 10px 16px; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; border-radius: 6px; transition: all 0.2s; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; font-weight: 500; }
+        .file-item:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }
+        .file-item.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
+        
+        .stats-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 200; padding: 4rem; overflow-y: auto; backdrop-filter: blur(40px); }
+        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.75); } }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const safeGetStats = () => {
+            try {
+                const data = localStorage.getItem('pyglide_stats');
+                if (data) {
+                    const parsed = JSON.parse(data);
+                    if (parsed && parsed.concepts && typeof parsed.total === 'number') {
+                        return parsed;
+                    }
+                }
+            } catch (e) {
+                console.error("Stats parse error:", e);
+            }
+            return { total: 0, concepts: {} };
+        };
+
+        const safeSaveStats = (stats) => {
+            try {
+                localStorage.setItem('pyglide_stats', JSON.stringify(stats));
+            } catch (e) {
+                console.error("Stats save error:", e);
+            }
+        };
+
+        const TEST_FILES = [
+            { id: '1', name: 'n_queens_recursion.py', content: 'def is_safe(board, row, col, n):\n    for i in range(col):\n        if board[row][i]: return False\n    return True\n\ndef solve(board, col, n):\n    if col >= n: return True\n    for i in range(n):\n        if is_safe(board, i, col, n):\n            # ROOT CAUSE: board is initialized with n-1 rows\n            board[i][col] = 1 \n            if solve(board, col + 1, n): return True\n            board[i][col] = 0\n    return False\n\nn = 4\nboard = [[0 for _ in range(n)] for _ in range(n-1)]\nsolve(board, 0, n)' },
+            { id: '2', name: 'data_schema_audit.py', content: 'def process_user(user_data):\n    print(f"Auditing user: {user_data[\'id\']}")\n    # This key is missing in the second user\n    return user_data["metadata"]["last_login"]\n\nusers = [\n    {"id": 101, "metadata": {"last_login": "2024-05-01"}},\n    {"id": 102, "metadata": {}}\n]\n\nfor u in users:\n    process_user(u)' },
+            { id: '3', name: 'division_logic.py', content: 'def calculate_ratio(a, b):\n    return a / b\n\ndef process_set(val):\n    return calculate_ratio(val, 0)\n\nprocess_set(10)' }
+        ];
+
+        // Parse streamed plain text into 3 sections
+        const parseStreamedSections = (text) => {
+            const s = text.match(/SYMPTOM:\s*([\s\S]*?)(?=CAUSE:|$)/i);
+            const c = text.match(/CAUSE:\s*([\s\S]*?)(?=RESOLUTION:|$)/i);
+            const r = text.match(/RESOLUTION:\s*([\s\S]*?)$/i);
+            return {
+                symptom: s ? s[1].trim() : null,
+                cause:   c ? c[1].trim() : null,
+                resolution: r ? r[1].trim() : null
+            };
+        };
+
+        // Streaming LLM call - calls onChunk with each accumulated token, onDone when finished
+        const streamLLM = (errorType, errorMsg, lineCode, onChunk, onDone, onFallback) => {
+            const prompt = `You are a Python debugging assistant inside a student IDE. Explain the error concisely.
+
+Error Type: ${errorType}
+Failing Code: ${lineCode || 'N/A'}
+Error Message: ${errorMsg.split('\n').slice(-2).join(' ')}
+
+Respond in exactly this plain-text format (no markdown, no extra headings):
+SYMPTOM: [One sentence: what went wrong]
+CAUSE: [Two to three sentences: why Python failed here]
+RESOLUTION: [Two sentences: the specific fix to apply]`;
+
+            fetch('http://localhost:11434/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'qwen2.5-coder:1.5b', prompt, stream: true }),
+                signal: AbortSignal.timeout(20000)
+            }).then(response => {
+                if (!response.ok) { onFallback(); return; }
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let accumulated = '';
+                const readChunk = () => {
+                    reader.read().then(({ done, value }) => {
+                        if (done) { onDone(accumulated); return; }
+                        const text = decoder.decode(value, { stream: true });
+                        const lines = text.split('\n').filter(l => l.trim());
+                        for (const line of lines) {
+                            try {
+                                const obj = JSON.parse(line);
+                                if (obj.response) {
+                                    accumulated += obj.response;
+                                    onChunk(accumulated);
+                                }
+                                if (obj.done) { onDone(accumulated); return; }
+                            } catch(e) {}
+                        }
+                        readChunk();
+                    }).catch(() => onDone(accumulated));
+                };
+                readChunk();
+            }).catch(() => onFallback());
+        };
+
+        // =========================================================
+        // PageRank-based Root Cause Identification
+        // Ported from SemanticLogDebugger_RootCauseAnalysis/SematicLogDebugger_Final.ipynb
+        // Core algorithm: perform_rca() - builds a DAG from the execution trace,
+        // runs PageRank (alpha=0.85) and picks the highest-scoring node as root cause.
+        // =========================================================
+        const pageRank = (nodes, edges, alpha = 0.85, maxIter = 100, tol = 1e-6) => {
+            if (nodes.length === 0) return {};
+            const N = nodes.length;
+            const nodeIdx = {};
+            nodes.forEach((n, i) => nodeIdx[n] = i);
+
+            // Build adjacency: outEdges[i] = list of j that i points to
+            const outEdges = Array.from({length: N}, () => []);
+            const inEdges  = Array.from({length: N}, () => []);
+            edges.forEach(([src, dst]) => {
+                const s = nodeIdx[src], d = nodeIdx[dst];
+                if (s !== undefined && d !== undefined) {
+                    outEdges[s].push(d);
+                    inEdges[d].push(s);
+                }
+            });
+
+            let scores = new Array(N).fill(1 / N);
+            for (let iter = 0; iter < maxIter; iter++) {
+                const newScores = new Array(N).fill((1 - alpha) / N);
+                for (let i = 0; i < N; i++) {
+                    const outs = outEdges[i];
+                    if (outs.length === 0) {
+                        // Dangling node: distributes rank equally to all
+                        const share = alpha * scores[i] / N;
+                        for (let j = 0; j < N; j++) newScores[j] += share;
+                    } else {
+                        const share = alpha * scores[i] / outs.length;
+                        outs.forEach(j => newScores[j] += share);
+                    }
+                }
+                // Check convergence
+                const diff = scores.reduce((s, v, i) => s + Math.abs(v - newScores[i]), 0);
+                scores = newScores;
+                if (diff < tol) break;
+            }
+
+            const result = {};
+            nodes.forEach((n, i) => result[n] = scores[i]);
+            return result;
+        };
+
+        const analyze = (msg, code) => {
+            const frames = [];
+            const codeLines = code.split('\n');
+            const totalLines = codeLines.length;
+            const regex = /File "(.*)", line (\d+), in (.*)/g;
+            let m;
+            while ((m = regex.exec(msg)) !== null) {
+                const ln = parseInt(m[2]);
+                if (ln <= totalLines) frames.push({ line: ln, func: m[3], code: codeLines[ln-1] || "" });
+            }
+            if (frames.length === 0) {
+                const lnMatch = msg.match(/line (\d+)/);
+                if (lnMatch) {
+                    const ln = parseInt(lnMatch[1]);
+                    if (ln <= totalLines) frames.push({ line: ln, func: "module", code: codeLines[ln-1] || "" });
+                }
+            }
+
+            const insights = [
+                { 
+                    pattern: /SyntaxError/, 
+                    title: "Syntax Error", 
+                    symptom: "Python could not parse the code at line {LINE} — this is a compilation failure, not a runtime failure.", 
+                    cause: "A syntax error means the code structure violated Python grammar rules. Common causes include a missing colon after `def` or `if`, mismatched parentheses or brackets, invalid use of operators, or illegal indentation.",
+                    resolution: "Carefully inspect the flagged line and the line immediately above it. Look for unclosed brackets, missing colons, or misplaced keywords."
+                },
+                { 
+                    pattern: /IndentationError/, 
+                    title: "Indentation Error", 
+                    symptom: "Python detected an inconsistent or unexpected indentation level at line {LINE}.", 
+                    cause: "Python uses indentation to define code blocks. Mixing tabs and spaces, or using inconsistent indent widths across a block, causes the parser to reject the file before execution.",
+                    resolution: "Ensure all indentation uses consistent spaces (4 spaces recommended). Use an editor with visible whitespace to detect tab/space mixing. The offending line is typically one that breaks the expected indentation depth."
+                },
+                { 
+                    pattern: /ZeroDivision/, 
+                    title: "Mathematical Inconsistency", 
+                    symptom: "The program attempted to divide a number by zero at line {LINE}.", 
+                    cause: "Python cannot mathematically reconcile division by zero. This usually happens when a variable acting as a denominator evaluates to 0 during runtime — often because of an unvalidated user input or a loop that reduces a counter to zero.",
+                    resolution: "Implement a guard clause (e.g., `if denominator == 0: return`) before the division operation. Trace which code path produces the zero denominator and validate input early."
+                },
+                { 
+                    pattern: /IndexError/, 
+                    title: "Boundary Violation", 
+                    symptom: "The code attempted to access an element in a sequence using an out-of-bounds index at line {LINE}.", 
+                    cause: "The index requested is either greater than the maximum valid index (length - 1), or negative enough to wrap past the beginning of the sequence. For example, accessing index 4 in a 3-item list.",
+                    resolution: "Verify your loop boundaries or index calculations. Ensure they strictly satisfy `0 <= index < len(sequence)`. Consider using `enumerate()` for safe iteration instead of manual indexing."
+                },
+                { 
+                    pattern: /KeyError/, 
+                    title: "Schema Violation", 
+                    symptom: "A required data identifier (key) was missing from a dictionary at line {LINE}.", 
+                    cause: "The code explicitly requested a key that does not exist in the current dictionary. This often occurs when processing dynamic API responses, iterating over objects with inconsistent schemas, or after a key was renamed or removed.",
+                    resolution: "Use `dict.get(key, default_value)` for safe access, or check `if key in dict:` before accessing. For nested keys, validate each level independently before accessing."
+                },
+                { 
+                    pattern: /NameError/, 
+                    title: "Identifier Failure", 
+                    symptom: "An undefined variable or function name was referenced at line {LINE}.", 
+                    cause: "The Python interpreter encountered a name it does not recognize in the current scope. This is typically due to a typo, a missing import statement, or calling a variable before it has been assigned a value in the executing scope.",
+                    resolution: "Check the spelling of the identifier carefully. Ensure the variable is assigned before use, and that any required modules are imported at the top of the file. If defined inside a function, verify the scope is accessible from the call site."
+                }
+            ];
+            
+            let ins = { 
+                title: "Logic Anomaly", 
+                symptom: "A logical interruption occurred during execution at line {LINE}.", 
+                cause: "An unexpected state was reached that the runtime could not process.",
+                resolution: "Review the causal chain below to trace the exact injection point of the fault."
+            };
+            
+            for (const i of insights) if (i.pattern.test(msg)) ins = i;
+
+            const stats = safeGetStats();
+            stats.total += 1;
+            stats.concepts[ins.title] = (stats.concepts[ins.title] || 0) + 1;
+            safeSaveStats(stats);
+
+            // =========================================================
+            // DAG + PageRank Root Cause Selection
+            // Mirrors SemanticLogDebugger.perform_rca():
+            //   G = nx.DiGraph((seq[i], seq[i+1]) for i in range(len(seq)-1))
+            //   chosen = max(nx.pagerank(G, alpha=0.85), key=scores.get)
+            // Frames = trace nodes; sequential call order = directed edges
+            // =========================================================
+            let rcIdx = 0;
+            let rcExplanation = 'fallback: single frame';
+
+            if (frames.length === 1) {
+                rcIdx = 0;
+                rcExplanation = 'singleton trace';
+            } else if (frames.length > 1) {
+                // Build node list (use func+line as unique node ID)
+                const nodeIds = frames.map((f, i) => `${f.func}@${f.line}@${i}`);
+                // Build edges: execution order seq[i] -> seq[i+1]
+                const edges = [];
+                for (let i = 0; i < nodeIds.length - 1; i++) {
+                    edges.push([nodeIds[i], nodeIds[i + 1]]);
+                }
+                const scores = pageRank(nodeIds, edges, 0.85);
+                // Find the frame with the highest PageRank score
+                let bestScore = -1;
+                nodeIds.forEach((nid, i) => {
+                    if (scores[nid] > bestScore) { bestScore = scores[nid]; rcIdx = i; }
+                });
+                rcExplanation = `root by PageRank (score: ${bestScore.toFixed(4)})`;
+            }
+
+            const lineRef = frames.length > 0 ? frames[rcIdx].line : "?";
+            const rcFrame = frames[rcIdx];
+            const lineCode = rcFrame ? rcFrame.code.trim() : '';
+            
+            return { 
+                frames, 
+                rc: rcIdx,
+                rawMsg: msg,
+                lineCode,
+                ins: { 
+                    title: ins.title,
+                    symptom: ins.symptom.replace(/{LINE}/g, lineRef),
+                    cause: ins.cause.replace(/{LINE}/g, lineRef),
+                    resolution: ins.resolution.replace(/{LINE}/g, lineRef)
+                } 
+            };
+        };
+
+        function AnalyticsPanel({ onBack }) {
+            const stats = safeGetStats();
+            const entries = Object.entries(stats.concepts).sort((a,b)=>b[1]-a[1]);
+            const maxVal = Math.max(...Object.values(stats.concepts), 1);
+            
+            const getRecommendation = () => {
+                if (entries.length === 0) return "Begin coding to generate performance insights.";
+                const topError = entries[0][0];
+                const maps = {
+                    "MATHEMATICAL INCONSISTENCY": "Focus on 'Guard Clauses' and 'Input Validation'. Always validate denominators and divisors before performing arithmetic operations.",
+                    "BOUNDARY VIOLATION": "Focus on 'Off-by-one errors' and using `enumerate()` instead of manual indexing. Always validate list lengths before loop access.",
+                    "SCHEMA VIOLATION": "Focus on 'Defensive Programming'. Prefer dict.get() over direct key access, and validate incoming data schemas before processing.",
+                    "IDENTIFIER FAILURE": "Focus on 'Variable Scope' and declaration order. Ensure all variables are defined before use and module imports are at the top.",
+                    "SYNTAX ERROR": "Focus on Python's grammar rules — colons after blocks, matching brackets, and consistent indentation. Use an IDE linter to catch issues before running.",
+                    "INDENTATION ERROR": "Standardize on 4-space indentation throughout all files. Never mix tabs and spaces. Configure your editor to show whitespace characters."
+                };
+                return maps[topError.toUpperCase()] || "Focus on modularizing your code to isolate and identify logical leaks.";
+            };
+
+            return (
+                <div className="stats-overlay">
+                    <div style={{maxWidth:'800px', margin:'0 auto'}}>
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'4rem'}}>
+                            <h1 style={{fontSize:'2.5rem', fontWeight:300, letterSpacing:'-0.02em'}}>ANALYTICS ENGINE</h1>
+                            <button className="btn btn-secondary" onClick={onBack}>RETURN TO EDITOR</button>
+                        </div>
+                        
+                        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'2rem', marginBottom:'3rem'}}>
+                            <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'24px', border:'1px solid var(--border)'}}>
+                                <div style={{fontSize:'0.75rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase'}}>Total Faults Detected</div>
+                                <div style={{fontSize:'4rem', fontWeight:800, color:'var(--accent)', lineHeight:'1'}}>{stats.total}</div>
+                            </div>
+                            <div className="recommendation-card" style={{marginTop:0}}>
+                                <div style={{fontSize:'0.75rem', fontWeight:800, color:'var(--accent)', marginBottom:'0.75rem', textTransform:'uppercase'}}>Priority Focus</div>
+                                <div style={{fontSize:'1.1rem', lineHeight:'1.6', fontWeight:500, color:'#e2e8f0'}}>{getRecommendation()}</div>
+                            </div>
+                        </div>
+
+                        <div style={{display:'flex', flexDirection:'column', gap:'2.5rem'}}>
+                            <h2 style={{fontSize:'1rem', fontWeight:700, color:'var(--text-dim)', borderBottom:'1px solid var(--border)', paddingBottom:'1rem'}}>FAULT DISTRIBUTION</h2>
+                            {entries.map(([c, count]) => (
+                                <div key={c}>
+                                    <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.95rem', marginBottom:'0.75rem', fontWeight:600}}>
+                                        <span>{c.toUpperCase()}</span>
+                                        <span style={{color:'var(--accent)'}}>{count}</span>
+                                    </div>
+                                    <div style={{height:'8px', background:'rgba(255,255,255,0.05)', borderRadius:'4px', overflow:'hidden'}}>
+                                        <div style={{height:'100%', background:'var(--accent)', width: `${(count/maxVal)*100}%`, borderRadius:'4px'}}></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const highlightPython = (code) => {
+            if (!code) return "";
+            let escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            const rules = [
+                { regex: /(#.*)/g, cls: 'token-comment' },
+                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, cls: 'token-string' },
+                { regex: /\b(def|class|if|else|elif|for|while|return|import|from|as|try|except|finally|pass|break|continue|in|is|not|and|or|with|lambda|yield|global|nonlocal|None|True|False)\b/g, cls: 'token-keyword' },
+                { regex: /\b(print|len|range|int|str|list|dict|set|tuple|enumerate|zip|sum|max|min|abs|open)\b/g, cls: 'token-builtin' },
+                { regex: /\b(\w+)(?=\()/g, cls: 'token-function' },
+                { regex: /\b(\d+)\b/g, cls: 'token-number' }
+            ];
+            let markers = [];
+            rules.forEach((rule, idx) => {
+                escaped = escaped.replace(rule.regex, (m) => {
+                    const marker = `{{T_${idx}_${markers.length}}}`;
+                    markers.push({ marker, html: `<span class="${rule.cls}">${m}</span>` });
+                    return marker;
+                });
+            });
+            markers.forEach(m => { escaped = escaped.replace(m.marker, m.html); });
+            return escaped;
+        };
+
+        function App() {
+            const [files, setFiles] = useState(TEST_FILES);
+            const [activeId, setActiveId] = useState('1');
+            const [out, setOut] = useState([]);
+            const [py, setPy] = useState(null);
+            const [rca, setRca] = useState(null);
+            const [view, setView] = useState('editor');
+            
+            const highlightRef = useRef(null);
+            const lineNumbersRef = useRef(null);
+
+            const activeFile = files.find(f => f.id === activeId) || files[0];
+            const lineCount = activeFile.content.split('\n').length;
+
+            useEffect(() => {
+                window.loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/" }).then(p => setPy(p));
+            }, []);
+
+            const run = async () => {
+                if (!py) return;
+                const logs = []; setRca(null); setOut([]);
+                py.setStdout({ batched: (t) => { logs.push(t); setOut([...logs]); } });
+                py.setStderr({ batched: (t) => { logs.push(t); setOut([...logs]); } });
+
+                const handleError = (errStr) => {
+                    const base = analyze(errStr, activeFile.content);
+                    // Open RCA panel immediately with streaming placeholder
+                    setRca({ ...base, llmLoading: true, streamText: '' });
+
+                    streamLLM(
+                        base.ins.title,
+                        errStr,
+                        base.lineCode,
+                        (accumulated) => {
+                            // Each token: update streamText live
+                            setRca(prev => prev ? { ...prev, streamText: accumulated } : prev);
+                        },
+                        (finalText) => {
+                            // Done: parse into sections
+                            const parsed = parseStreamedSections(finalText);
+                            setRca(prev => prev ? {
+                                ...prev,
+                                llmLoading: false,
+                                streamText: finalText,
+                                ins: {
+                                    title: base.ins.title,
+                                    symptom: parsed.symptom || base.ins.symptom,
+                                    cause:   parsed.cause   || base.ins.cause,
+                                    resolution: parsed.resolution || base.ins.resolution
+                                }
+                            } : prev);
+                        },
+                        () => {
+                            // Fallback: Ollama not running, show templates
+                            setRca(prev => prev ? { ...prev, llmLoading: false, streamText: null } : prev);
+                        }
+                    );
+                };
+
+                // Pre-flight: use py.globals.set() to safely pass code (avoids escaping issues)
+                try {
+                    py.globals.set('__preflight_code__', activeFile.content);
+                    await py.runPythonAsync("compile(__preflight_code__, '<user_code>', 'exec')");
+                } catch (compileErr) {
+                    const errStr = compileErr.toString();
+                    setOut([errStr]);
+                    handleError(errStr);  // No await — streaming is non-blocking
+                    return;
+                }
+
+                // Main execution
+                try { await py.runPythonAsync(activeFile.content); }
+                catch (e) {
+                    const errStr = e.toString();
+                    setOut([...logs, errStr]);
+                    handleError(errStr);  // No await — streaming is non-blocking
+                }
+            };
+
+            const updateContent = (e) => {
+                const newVal = e.target.value;
+                setFiles(prev => prev.map(f => f.id === activeId ? { ...f, content: newVal } : f));
+                // Clear stale RCA when code is edited
+                if (rca) setRca(null);
+            };
+
+            // Insert 4 spaces on Tab instead of losing focus
+            const handleKeyDown = (e) => {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const el = e.target;
+                    const start = el.selectionStart;
+                    const end = el.selectionEnd;
+                    const spaces = '    ';
+                    const newVal = el.value.substring(0, start) + spaces + el.value.substring(end);
+                    // Update state
+                    setFiles(prev => prev.map(f => f.id === activeId ? { ...f, content: newVal } : f));
+                    // Restore cursor position after state update
+                    requestAnimationFrame(() => {
+                        el.selectionStart = start + spaces.length;
+                        el.selectionEnd = start + spaces.length;
+                    });
+                }
+            };
+
+            const syncScroll = (e) => {
+                if (highlightRef.current) {
+                    highlightRef.current.scrollTop = e.target.scrollTop;
+                    highlightRef.current.scrollLeft = e.target.scrollLeft;
+                }
+                if (lineNumbersRef.current) {
+                    lineNumbersRef.current.scrollTop = e.target.scrollTop;
+                }
+            };
+
+            return (
+                <div className="layout">
+                    {view === 'stats' && <AnalyticsPanel onBack={()=>setView('editor')} />}
+                    <aside className="sidebar">
+                        <div className="logo">PYGLIDE</div>
+                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, letterSpacing:'1px', marginBottom:'15px', paddingLeft:'10px'}}>EXPLORER</div>
+                        {files.map(f => (
+                            <div key={f.id} className={`file-item ${activeId === f.id ? 'active' : ''}`} onClick={() => { setActiveId(f.id); setRca(null); setOut([]); }}>
+                                {f.name}
+                            </div>
+                        ))}
+                        <div style={{marginTop:'auto'}} className="file-item" onClick={()=>setView('stats')}>
+                            <span style={{opacity: 0.6}}>ANALYTICS ENGINE</span>
+                        </div>
+                    </aside>
+                    <div className="main">
+                        <div className="toolbar">
+                            <button className="btn" onClick={run} disabled={!py}>{py ? "EXECUTE RUNTIME" : "LOADING ENGINE..."}</button>
+                            <div style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:800, letterSpacing:'1px', display:'flex', alignItems:'center', gap:'8px'}}>
+                                <div style={{width:6, height:6, borderRadius:'50%', background:'var(--success)'}}></div> SYSTEM STANDBY
+                            </div>
+                        </div>
+                        <div className="editor-zone">
+                            <div className="editor-container">
+                                <div className="line-numbers" ref={lineNumbersRef}>
+                                    {Array.from({length: lineCount}, (_, i) => <div key={i}>{i+1}</div>)}
+                                </div>
+                                <div className="editor-view">
+                                    <pre className="code-highlight" ref={highlightRef} dangerouslySetInnerHTML={{ __html: highlightPython(activeFile.content) + "\n" }} />
+                                    <textarea className="code-input" value={activeFile.content} onChange={updateContent} onKeyDown={handleKeyDown} onScroll={syncScroll} spellCheck="false" />
+                                </div>
+                            </div>
+                            {rca && (
+                                <div className="rca-panel">
+                                    <div className="rca-header">
+                                        <div className="rca-title">ROOT CAUSE ANALYSIS</div>
+                                        <button onClick={()=>setRca(null)} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontWeight:700, fontSize:'0.75rem', transition:'color 0.2s'}} onMouseOver={e=>e.target.style.color='#fff'} onMouseOut={e=>e.target.style.color='var(--text-dim)'}>DISMISS</button>
+                                    </div>
+
+                                    <div className="diagnostic-card">
+                                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.25rem'}}>
+                                            <div style={{fontSize:'0.65rem', fontWeight:800, color:'var(--accent)', letterSpacing:'0.1em'}}>LLM DIAGNOSTIC</div>
+                                            {rca.llmLoading 
+                                                ? <div style={{fontSize:'0.65rem', color:'var(--text-dim)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
+                                                    <div style={{width:6, height:6, borderRadius:'50%', background:'var(--accent)', animation:'pulse 1s infinite'}}></div> GENERATING...
+                                                  </div>
+                                                : <div style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
+                                                    <div style={{width:6, height:6, borderRadius:'50%', background:'var(--success)'}}></div> AI INSIGHT
+                                                  </div>
+                                            }
+                                        </div>
+
+                                        {rca.llmLoading ? (
+                                            <div style={{fontFamily:'JetBrains Mono, monospace', fontSize:'13px', lineHeight:'1.8', color:'#e2e8f0', whiteSpace:'pre-wrap', minHeight:'80px'}}>
+                                                {rca.streamText || ''}
+                                                <span style={{display:'inline-block', width:'2px', height:'14px', background:'var(--accent)', verticalAlign:'text-bottom', marginLeft:'2px', animation:'pulse 0.8s steps(1) infinite'}}></span>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="diagnostic-section">
+                                                    <div className="diagnostic-label">1. Symptom Identified</div>
+                                                    <div className="diagnostic-text">{rca.ins.symptom}</div>
+                                                </div>
+                                                <div className="diagnostic-section">
+                                                    <div className="diagnostic-label">2. Root Cause</div>
+                                                    <div className="diagnostic-text">{rca.ins.cause}</div>
+                                                </div>
+                                                <div className="diagnostic-section">
+                                                    <div className="diagnostic-label">3. Recommended Resolution</div>
+                                                    <div className="diagnostic-text">{rca.ins.resolution}</div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                    
+                                    <div>
+                                        <div className="rca-title" style={{marginBottom: '2rem'}}>TECHNICAL EXECUTION TRACE</div>
+                                        <div className="graph-container">
+                                            {rca.frames.map((f, i) => {
+                                                const isRoot = i === rca.rc;
+                                                const isException = i === rca.frames.length - 1;
+                                                const isBoth = isRoot && isException;
+                                                return (
+                                                    <div key={i} className={`graph-node ${isRoot ? 'root' : ''} ${isException ? 'exception' : ''}`}>
+                                                        {/* Tags row — always inline at top to avoid absolute overlap */}
+                                                        {(isRoot || isException) && (
+                                                            <div style={{display:'flex', gap:'8px', marginBottom:'12px', flexWrap:'wrap'}}>
+                                                                {isRoot && (
+                                                                    <div style={{fontSize:'9px', fontWeight:900, background:'var(--success)', color:'#000', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
+                                                                        ROOT CAUSE
+                                                                    </div>
+                                                                )}
+                                                                {isException && (
+                                                                    <div style={{fontSize:'9px', fontWeight:900, background:'var(--error)', color:'#fff', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
+                                                                        EXCEPTION
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                        <div style={{fontSize:'13px', fontWeight:700, color:'#f8fafc', marginBottom:'10px'}}>{f.func}() <span style={{fontWeight:500, color:'var(--text-dim)'}}>at Line {f.line}</span></div>
+                                                        <div style={{fontSize:'12px', color:'#93c5fd', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,0,0,0.4)', padding:'10px', borderRadius:'8px', border:'1px solid rgba(147, 197, 253, 0.1)'}}>{f.code.trim()}</div>
+                                                        {i < rca.frames.length - 1 && (
+                                                            <div className="graph-edge">
+                                                                <div className="graph-arrow"></div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <div className="terminal">
+                            <div style={{fontSize:'0.7rem', color:'var(--text-dim)', marginBottom:'12px', fontWeight:800, letterSpacing:'0.05em'}}>SYSTEM CONSOLE</div>
+                            {out.map((l, i) => <div key={i} style={{color: l.includes('Error') ? '#fca5a5' : '#e2e8f0', marginBottom:'6px', whiteSpace:'pre-wrap', lineHeight:'1.5'}}>{l}</div>)}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
