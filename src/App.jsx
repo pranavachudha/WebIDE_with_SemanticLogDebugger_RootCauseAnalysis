@@ -36,6 +36,9 @@ const App = () => {
   const [activeFileId, setActiveFileId] = useState('1');
   const [isExecuting, setIsExecuting] = useState(false);
   const [rcaResult, setRcaResult] = useState(null);
+  const [output, setOutput] = useState([]);
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
   const { loading, error: pyodideError, runCode } = usePyodide();
   const terminalEndRef = useRef(null);
 
@@ -94,15 +97,41 @@ const App = () => {
     ));
   };
 
-  const addNewFile = () => {
+  const handleCreateFile = () => {
+    setIsCreatingFile(true);
+    setNewFileName('');
+  };
+
+  const confirmCreateFile = () => {
+    if (!newFileName.trim()) {
+      setIsCreatingFile(false);
+      return;
+    }
+    
+    let finalName = newFileName.trim();
+    if (!finalName.endsWith('.py')) {
+      finalName += '.py';
+    }
+
     const newId = Date.now().toString();
     const newFile = {
       id: newId,
-      name: `file_${files.length}.py`,
-      content: '# New Python file\nprint("Hello New File!")'
+      name: finalName,
+      content: '# New Python file\n'
     };
+    
     setFiles([...files, newFile]);
     setActiveFileId(newId);
+    setIsCreatingFile(false);
+    setNewFileName('');
+  };
+
+  const handleNewFileKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      confirmCreateFile();
+    } else if (e.key === 'Escape') {
+      setIsCreatingFile(false);
+    }
   };
 
   const deleteFile = (e, id) => {
@@ -129,7 +158,7 @@ const App = () => {
         <div className="file-section" style={{ flex: 1 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0 0.5rem' }}>
             <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Explorer</span>
-            <button onClick={addNewFile} className="btn-icon" title="New File">
+            <button onClick={handleCreateFile} className="btn-icon" title="New File">
               <Plus size={14} />
             </button>
           </div>
@@ -150,6 +179,30 @@ const App = () => {
                 )}
               </div>
             ))}
+            {isCreatingFile && (
+              <div className="file-item new-file-input-wrapper">
+                <FileCode size={16} />
+                <input
+                  type="text"
+                  autoFocus
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  onKeyDown={handleNewFileKeyDown}
+                  onBlur={() => setIsCreatingFile(false)}
+                  placeholder="filename.py"
+                  className="new-file-input"
+                  style={{ 
+                    flex: 1, 
+                    background: 'transparent', 
+                    border: 'none', 
+                    color: 'inherit', 
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    fontSize: 'inherit'
+                  }}
+                />
+              </div>
+            )}
           </div>
         </div>
 
