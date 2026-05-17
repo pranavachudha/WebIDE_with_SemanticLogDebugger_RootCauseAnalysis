@@ -90,6 +90,7 @@ function App() {
   ]);
   const [execution, setExecution] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
+<<<<<<< HEAD
   const [isIndexing, setIsIndexing] = useState(false);
   const [activeTab, setActiveTab] = useState('rca');
   const [activePanel, setActivePanel] = useState('editor');
@@ -98,6 +99,14 @@ function App() {
   const uploadInputRef = useRef(null);
   const editorRef = useRef(null);
   const decorationsRef = useRef([]);
+=======
+  const [rcaResult, setRcaResult] = useState(null);
+  const [output, setOutput] = useState([]);
+  const [isCreatingFile, setIsCreatingFile] = useState(false);
+  const [newFileName, setNewFileName] = useState('');
+  const { loading, error: pyodideError, runCode } = usePyodide();
+  const terminalEndRef = useRef(null);
+>>>>>>> e1760932d783705b2bb1778118908315727d5041
 
   const activeFile = useMemo(
     () => files.find((file) => file.id === activeFileId) || files[0],
@@ -261,6 +270,7 @@ function App() {
     event.preventDefault();
   };
 
+<<<<<<< HEAD
   const addNewFile = () => {
     const id = `file-${Date.now()}`;
     const name = `untitled-${files.length + 1}.py`;
@@ -268,6 +278,43 @@ function App() {
     setFiles((prev) => [...prev, newFile]);
     setActiveFileId(id);
     setActivePanel('explorer');
+=======
+  const handleCreateFile = () => {
+    setIsCreatingFile(true);
+    setNewFileName('');
+  };
+
+  const confirmCreateFile = () => {
+    if (!newFileName.trim()) {
+      setIsCreatingFile(false);
+      return;
+    }
+    
+    let finalName = newFileName.trim();
+    if (!finalName.endsWith('.py')) {
+      finalName += '.py';
+    }
+
+    const newId = Date.now().toString();
+    const newFile = {
+      id: newId,
+      name: finalName,
+      content: '# New Python file\n'
+    };
+    
+    setFiles([...files, newFile]);
+    setActiveFileId(newId);
+    setIsCreatingFile(false);
+    setNewFileName('');
+  };
+
+  const handleNewFileKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      confirmCreateFile();
+    } else if (e.key === 'Escape') {
+      setIsCreatingFile(false);
+    }
+>>>>>>> e1760932d783705b2bb1778118908315727d5041
   };
 
   const renameFile = (fileId) => {
@@ -306,6 +353,7 @@ function App() {
           <h3>File Explorer</h3>
           <p>Use the left sidebar to create, rename, delete, and open Python files. Uploaded files appear here immediately.</p>
         </div>
+<<<<<<< HEAD
       );
     }
 
@@ -320,6 +368,14 @@ function App() {
             </button>
             <button className="secondary-button" onClick={() => setActivePanel('terminal')}>
               View Terminal
+=======
+        
+        <div className="file-section" style={{ flex: 1 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0 0.5rem' }}>
+            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Explorer</span>
+            <button onClick={handleCreateFile} className="btn-icon" title="New File">
+              <Plus size={14} />
+>>>>>>> e1760932d783705b2bb1778118908315727d5041
             </button>
           </div>
           {execution && (
@@ -328,6 +384,7 @@ function App() {
                 <span className="viz-item-key">Last file</span>
                 <span>{execution.filename || activeFile.name}</span>
               </div>
+<<<<<<< HEAD
               <div className="viz-item">
                 <span className="viz-item-key">Last runtime</span>
                 <span>{execution.execution_time || 'N/A'}</span>
@@ -338,6 +395,34 @@ function App() {
               </div>
             </div>
           )}
+=======
+            ))}
+            {isCreatingFile && (
+              <div className="file-item new-file-input-wrapper">
+                <FileCode size={16} />
+                <input
+                  type="text"
+                  autoFocus
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  onKeyDown={handleNewFileKeyDown}
+                  onBlur={() => setIsCreatingFile(false)}
+                  placeholder="filename.py"
+                  className="new-file-input"
+                  style={{ 
+                    flex: 1, 
+                    background: 'transparent', 
+                    border: 'none', 
+                    color: 'inherit', 
+                    outline: 'none',
+                    fontFamily: 'inherit',
+                    fontSize: 'inherit'
+                  }}
+                />
+              </div>
+            )}
+          </div>
+>>>>>>> e1760932d783705b2bb1778118908315727d5041
         </div>
       );
     }

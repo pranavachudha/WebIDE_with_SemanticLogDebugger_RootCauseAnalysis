@@ -3,11 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <title>PyGlide | Premium Python IDE</title>
-    <!-- Stable Dependencies -->
-    <script src="https://cdn.jsdelivr.net/pyodide/v0.25.0/full/pyodide.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -32,54 +35,32 @@
         .toolbar { height: 60px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 2rem; background: rgba(10, 10, 12, 0.8); backdrop-filter: blur(10px); }
         .editor-zone { flex: 1; position: relative; background: var(--editor-bg); display: flex; overflow: hidden; }
         
-        .editor-container { position: relative; flex: 1; display: flex; overflow: hidden; }
+        .editor-container { position: relative; flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         
-        /* ALIGNED LINE NUMBERS */
-        .line-numbers { 
-            width: 50px; 
-            background: #070708; 
-            color: #3f3f46; 
-            padding: 20px 0; 
-            text-align: center; 
-            font-family: 'JetBrains Mono', monospace; 
-            font-size: 14px; 
-            line-height: 1.6; 
-            user-select: none; 
-            border-right: 1px solid var(--border); 
-            z-index: 2; 
-            overflow-y: hidden; 
-        }
+        .tabs-container { height: 40px; background: var(--sidebar); border-bottom: 1px solid var(--border); display: flex; align-items: flex-end; padding: 0 10px; gap: 4px; overflow-x: auto; }
+        .editor-tab { padding: 8px 16px; background: rgba(255,255,255,0.02); color: var(--text-dim); font-size: 12px; font-family: 'JetBrains Mono', monospace; cursor: pointer; border: 1px solid transparent; border-bottom: none; border-radius: 6px 6px 0 0; display: flex; align-items: center; gap: 8px; }
+        .editor-tab.active { background: var(--editor-bg); color: var(--accent); border-color: var(--border); font-weight: 600; border-top: 2px solid var(--accent); }
+        .editor-tab:hover:not(.active) { background: rgba(255,255,255,0.05); color: var(--text); }
+        .tab-close { font-size: 14px; opacity: 0.5; cursor: pointer; }
+        .tab-close:hover { opacity: 1; color: var(--error); }
         
-        .editor-view { position: relative; flex: 1; overflow: auto; }
-        .code-input, .code-highlight { 
-            position: absolute; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            min-height: 100%; 
-            padding: 20px; 
-            font-family: 'JetBrains Mono', monospace; 
-            font-size: 14px; 
-            line-height: 1.6; 
-            white-space: pre; 
-            border: none; 
-            outline: none; 
-            tab-size: 4; 
-        }
-        .code-input { background: transparent; color: transparent; caret-color: #fff; z-index: 2; resize: none; overflow: hidden; -webkit-text-fill-color: transparent; }
-        .code-highlight { z-index: 1; pointer-events: none; }
+        #monaco-container { flex: 1; width: 100%; height: 100%; }
         
-        .token-keyword { color: #c678dd; font-weight: 600; }
-        .token-string { color: #98c379; }
-        .token-comment { color: #5c6370; font-style: italic; }
-        .token-function { color: #61afef; }
-        .token-number { color: #d19a66; }
-        
-        .terminal { height: 200px; background: #070708; border-top: 1px solid var(--border); padding: 15px; font-family: 'JetBrains Mono', monospace; overflow-y: auto; font-size: 13px; z-index: 50; }
+        .terminal { display: flex; flex-direction: column; border-top: 1px solid var(--border); background: #070708; z-index: 50; position: relative; }
+        .terminal-resizer { width: 100%; height: 6px; cursor: row-resize; position: absolute; top: -3px; left: 0; z-index: 100; transition: background 0.2s; }
+        .terminal-resizer:hover, .terminal-resizer:active { background: var(--accent); opacity: 0.8; }
+        .terminal-header { font-size: 0.7rem; color: var(--text-dim); padding: 10px 20px; font-weight: 800; letter-spacing: 0.1em; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.02); display: flex; justify-content: space-between; align-items: center; }
+        #xterm-container { flex: 1; overflow: hidden; background: #070708; }
+        .xterm-viewport { overflow-y: auto !important; }
         
         /* ENHANCED RCA PANEL */
         .rca-panel { 
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
             width: 500px; /* Wider for better reading */
+            max-width: 90%;
             background: rgba(10, 10, 12, 0.98); 
             border-left: 1px solid var(--border); 
             backdrop-filter: blur(40px); 
@@ -90,6 +71,12 @@
             display: flex;
             flex-direction: column;
             gap: 2rem;
+            animation: slideInRca 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        @keyframes slideInRca {
+            from { transform: translateX(100%); }
+            to { transform: translateX(0); }
         }
         
         .rca-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 1.5rem; }
@@ -456,142 +443,611 @@ RESOLUTION: [Two sentences: the specific fix to apply]`;
             );
         }
 
-        const highlightPython = (code) => {
-            if (!code) return "";
-            let escaped = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-            const rules = [
-                { regex: /(#.*)/g, cls: 'token-comment' },
-                { regex: /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, cls: 'token-string' },
-                { regex: /\b(def|class|if|else|elif|for|while|return|import|from|as|try|except|finally|pass|break|continue|in|is|not|and|or|with|lambda|yield|global|nonlocal|None|True|False)\b/g, cls: 'token-keyword' },
-                { regex: /\b(print|len|range|int|str|list|dict|set|tuple|enumerate|zip|sum|max|min|abs|open)\b/g, cls: 'token-builtin' },
-                { regex: /\b(\w+)(?=\()/g, cls: 'token-function' },
-                { regex: /\b(\d+)\b/g, cls: 'token-number' }
-            ];
-            let markers = [];
-            rules.forEach((rule, idx) => {
-                escaped = escaped.replace(rule.regex, (m) => {
-                    const marker = `{{T_${idx}_${markers.length}}}`;
-                    markers.push({ marker, html: `<span class="${rule.cls}">${m}</span>` });
-                    return marker;
-                });
-            });
-            markers.forEach(m => { escaped = escaped.replace(m.marker, m.html); });
-            return escaped;
+        const loadFiles = () => {
+            try {
+                const saved = localStorage.getItem('pyglide_workspace');
+                if (saved) return JSON.parse(saved);
+            } catch(e) {}
+            return TEST_FILES.map(f => ({...f, type: 'file', parentId: null}));
+        };
+        const loadTabs = () => {
+            try {
+                const saved = localStorage.getItem('pyglide_tabs');
+                if (saved) return JSON.parse(saved);
+            } catch(e) {}
+            return ['1'];
         };
 
         function App() {
-            const [files, setFiles] = useState(TEST_FILES);
-            const [activeId, setActiveId] = useState('1');
-            const [out, setOut] = useState([]);
-            const [py, setPy] = useState(null);
+            const [files, setFiles] = useState(loadFiles());
+            const [activeId, setActiveId] = useState(() => localStorage.getItem('pyglide_activeId') || '1');
+            const [openTabs, setOpenTabs] = useState(loadTabs());
+            const [worker, setWorker] = useState(null);
+            const [engineReady, setEngineReady] = useState(false);
+            
+            const termRef = useRef(null);
+            const termInstance = useRef(null);
+            const fitAddonRef = useRef(null);
+            const currentLineRef = useRef('');
+            const isWaitingForInputRef = useRef(false);
+            const pendingInputUidRef = useRef(null);
+            const isReplRef = useRef(true);
+            const workerRef = useRef(null);
+            
+            const [termHeight, setTermHeight] = useState(250);
+
             const [rca, setRca] = useState(null);
             const [view, setView] = useState('editor');
+            const [creatingItem, setCreatingItem] = useState(null);
+            const [newItemName, setNewItemName] = useState('');
+            const [draggedNodeId, setDraggedNodeId] = useState(null);
+            const [dragOverNodeId, setDragOverNodeId] = useState(null);
+            const [editorReady, setEditorReady] = useState(false);
             
-            const highlightRef = useRef(null);
-            const lineNumbersRef = useRef(null);
+            const activeIdRef = useRef(activeId);
+            useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+            
+            useEffect(() => { localStorage.setItem('pyglide_workspace', JSON.stringify(files)); }, [files]);
+            useEffect(() => { localStorage.setItem('pyglide_tabs', JSON.stringify(openTabs)); }, [openTabs]);
+            useEffect(() => { localStorage.setItem('pyglide_activeId', activeId || ''); }, [activeId]);
+            
+            const [replInput, setReplInput] = useState('');
 
-            const activeFile = files.find(f => f.id === activeId) || files[0];
-            const lineCount = activeFile.content.split('\n').length;
+            const monacoRef = useRef(null);
+            const editorInstance = useRef(null);
 
             useEffect(() => {
-                window.loadPyodide({ indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/" }).then(p => setPy(p));
+                if (window.require && monacoRef.current && !editorInstance.current) {
+                    window.MonacoEnvironment = {
+                        getWorkerUrl: function(workerId, label) {
+                            return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
+                                self.MonacoEnvironment = { baseUrl: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/' };
+                                importScripts('https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/base/worker/workerMain.js');
+                            `)}`;
+                        }
+                    };
+                    
+                    window.require.config({ paths: { 'vs': 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' }});
+                    window.require(['vs/editor/editor.main'], function() {
+                        window.monaco.editor.defineTheme('pyglide-dark', {
+                            base: 'vs-dark',
+                            inherit: true,
+                            rules: [],
+                            colors: { 'editor.background': '#0f0f11' }
+                        });
+                        editorInstance.current = window.monaco.editor.create(monacoRef.current, {
+                            value: '', 
+                            language: 'python',
+                            theme: 'pyglide-dark',
+                            automaticLayout: true,
+                            minimap: { enabled: false },
+                            fontSize: 14,
+                            fontFamily: "'JetBrains Mono', monospace"
+                        });
+                        
+                        editorInstance.current.onDidChangeModelContent(() => {
+                            if (!editorInstance.current || !activeIdRef.current) return;
+                            const val = editorInstance.current.getValue();
+                            setFiles(prev => prev.map(f => f.id === activeIdRef.current ? { ...f, content: val } : f));
+                            setRca(null); // Clear stale RCA
+                        });
+                        
+                        // Register Pyodide Live Autocompletion
+                        window.monaco.languages.registerCompletionItemProvider('python', {
+                            triggerCharacters: ['.'],
+                            provideCompletionItems: async function(model, position) {
+                                const textUntilPosition = model.getValueInRange({
+                                    startLineNumber: position.lineNumber, startColumn: 1,
+                                    endLineNumber: position.lineNumber, endColumn: position.column
+                                });
+                                const match = textUntilPosition.match(/([a-zA-Z0-9_]+)\.$/);
+                                if (!match) return { suggestions: [] };
+                                const objName = match[1];
+                                const pyInstance = pyRef.current;
+                                if (!pyInstance) return { suggestions: [] };
+                                
+                                try {
+                                    pyInstance.globals.set('__autocomplete_obj__', objName);
+                                    const code = `
+import builtins
+try:
+    obj = globals().get(__autocomplete_obj__, getattr(builtins, __autocomplete_obj__, None))
+    if obj is not None:
+        ",".join([d for d in dir(obj) if not d.startswith('_')])
+    else:
+        ""
+except:
+    ""
+`;
+                                    const attrs = await pyInstance.runPythonAsync(code);
+                                    if (attrs) {
+                                        const suggestions = attrs.split(',').map(attr => ({
+                                            label: attr,
+                                            kind: window.monaco.languages.CompletionItemKind.Property,
+                                            insertText: attr
+                                        }));
+                                        return { suggestions };
+                                    }
+                                } catch (e) {}
+                                return { suggestions: [] };
+                            }
+                        });
+
+                        setEditorReady(true);
+                    });
+                }
             }, []);
 
-            const run = async () => {
-                if (!py) return;
-                const logs = []; setRca(null); setOut([]);
-                py.setStdout({ batched: (t) => { logs.push(t); setOut([...logs]); } });
-                py.setStderr({ batched: (t) => { logs.push(t); setOut([...logs]); } });
+            const activeFile = files.find(f => f.id === activeId);
 
-                const handleError = (errStr) => {
-                    const base = analyze(errStr, activeFile.content);
-                    // Open RCA panel immediately with streaming placeholder
-                    setRca({ ...base, llmLoading: true, streamText: '' });
+            useEffect(() => {
+                if (editorReady && editorInstance.current && activeFile) {
+                    const currentVal = editorInstance.current.getValue();
+                    if (currentVal !== activeFile.content) {
+                        editorInstance.current.setValue(activeFile.content || '');
+                    }
+                } else if (editorReady && editorInstance.current && !activeFile) {
+                    editorInstance.current.setValue('');
+                }
+            }, [activeId, activeFile, editorReady]);
 
-                    streamLLM(
-                        base.ins.title,
-                        errStr,
-                        base.lineCode,
-                        (accumulated) => {
-                            // Each token: update streamText live
-                            setRca(prev => prev ? { ...prev, streamText: accumulated } : prev);
-                        },
-                        (finalText) => {
-                            // Done: parse into sections
-                            const parsed = parseStreamedSections(finalText);
-                            setRca(prev => prev ? {
-                                ...prev,
-                                llmLoading: false,
-                                streamText: finalText,
-                                ins: {
-                                    title: base.ins.title,
-                                    symptom: parsed.symptom || base.ins.symptom,
-                                    cause:   parsed.cause   || base.ins.cause,
-                                    resolution: parsed.resolution || base.ins.resolution
-                                }
-                            } : prev);
-                        },
-                        () => {
-                            // Fallback: Ollama not running, show templates
-                            setRca(prev => prev ? { ...prev, llmLoading: false, streamText: null } : prev);
+            const openFile = (id) => {
+                if (!openTabs.includes(id)) setOpenTabs([...openTabs, id]);
+                setActiveId(id);
+                setRca(null);
+                rebootWorker();
+            };
+
+            const closeTab = (e, id) => {
+                e.stopPropagation();
+                const newTabs = openTabs.filter(t => t !== id);
+                setOpenTabs(newTabs);
+                if (activeId === id) {
+                    const nextId = newTabs.length > 0 ? newTabs[newTabs.length - 1] : null;
+                    setActiveId(nextId);
+                    rebootWorker();
+                }
+            };
+
+            const downloadWorkspace = async () => {
+                if (!window.JSZip) return;
+                const zip = new window.JSZip();
+                const addFilesToZip = (parentId, currentFolder) => {
+                    const children = files.filter(f => f.parentId === parentId);
+                    for (const f of children) {
+                        if (f.type === 'folder') {
+                            const newFolder = currentFolder.folder(f.name);
+                            addFilesToZip(f.id, newFolder);
+                        } else {
+                            currentFolder.file(f.name, f.content || "");
                         }
-                    );
+                    }
                 };
+                addFilesToZip(null, zip);
+                const blob = await zip.generateAsync({ type: "blob" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = "pyglide_workspace.zip";
+                a.click();
+                URL.revokeObjectURL(url);
+            };
 
-                // Pre-flight: use py.globals.set() to safely pass code (avoids escaping issues)
+            // Initialize Xterm.js
+            useEffect(() => {
+                console.log("XTERM SETUP TRIGGERED");
+                console.log("window.Terminal:", !!window.Terminal, "termRef.current:", !!termRef.current);
                 try {
-                    py.globals.set('__preflight_code__', activeFile.content);
-                    await py.runPythonAsync("compile(__preflight_code__, '<user_code>', 'exec')");
-                } catch (compileErr) {
-                    const errStr = compileErr.toString();
-                    setOut([errStr]);
-                    handleError(errStr);  // No await — streaming is non-blocking
+                    if (!termInstance.current && termRef.current && window.Terminal) {
+                        console.log("INITIALIZING XTERM INSTANCE...");
+                        const term = new window.Terminal({
+                            theme: { background: '#070708', foreground: '#e2e8f0', cursor: '#3b82f6' },
+                            fontFamily: "'JetBrains Mono', monospace",
+                            fontSize: 13,
+                            cursorBlink: true
+                        });
+                        let fitAddon = null;
+                        if (window.FitAddon) {
+                            if (typeof window.FitAddon.FitAddon === 'function') {
+                                fitAddon = new window.FitAddon.FitAddon();
+                            } else if (typeof window.FitAddon === 'function') {
+                                fitAddon = new window.FitAddon();
+                            }
+                        }
+                        if (fitAddon) {
+                            fitAddonRef.current = fitAddon;
+                            term.loadAddon(fitAddon);
+                        }
+                        term.open(termRef.current);
+                        
+                        // Delay fit slightly to ensure container is sized
+                        if (fitAddon) {
+                            setTimeout(() => fitAddon.fit(), 100);
+                        }
+                        
+                        termInstance.current = term;
+
+                        term.write('PYGLIDE SYSTEM CONSOLE\r\n');
+                        term.write('>>> ');
+
+                        term.onData(e => {
+                            if (!isWaitingForInputRef.current && !isReplRef.current) return;
+
+                            switch (e) {
+                                case '\r': // Enter
+                                    term.write('\r\n');
+                                    const code = currentLineRef.current;
+                                    currentLineRef.current = '';
+                                    if (isWaitingForInputRef.current) {
+                                        isWaitingForInputRef.current = false;
+                                        provideInput(code);
+                                    } else if (isReplRef.current) {
+                                        handleReplEnter(code);
+                                    }
+                                    break;
+                                case '\u007F': // Backspace
+                                    if (currentLineRef.current.length > 0) {
+                                        currentLineRef.current = currentLineRef.current.slice(0, -1);
+                                        term.write('\b \b');
+                                    }
+                                    break;
+                                default:
+                                    if ((e >= String.fromCharCode(0x20) && e <= String.fromCharCode(0x7E)) || e.length >= 2) {
+                                        currentLineRef.current += e;
+                                        term.write(e);
+                                    }
+                            }
+                        });
+                        
+                        window.addEventListener('resize', () => { if (fitAddonRef.current) fitAddonRef.current.fit(); });
+                    }
+                } catch (e) {
+                    console.error("XTERM INIT ERROR:", e);
+                }
+            }, []);
+
+            const startResize = (e) => {
+                e.preventDefault();
+                const startY = e.clientY;
+                const startHeight = termHeight;
+                
+                const onMouseMove = (moveEvent) => {
+                    const deltaY = startY - moveEvent.clientY;
+                    const newHeight = Math.max(100, Math.min(startHeight + deltaY, window.innerHeight - 100));
+                    setTermHeight(newHeight);
+                };
+                
+                const onMouseUp = () => {
+                    document.removeEventListener('mousemove', onMouseMove);
+                    document.removeEventListener('mouseup', onMouseUp);
+                    if (fitAddonRef.current) fitAddonRef.current.fit();
+                };
+                
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            };
+
+            const rebootWorker = (fromRun = false) => {
+                if (workerRef.current) {
+                    workerRef.current.terminate();
+                }
+                isWaitingForInputRef.current = false;
+                pendingInputUidRef.current = null;
+                isReplRef.current = !fromRun;
+                currentLineRef.current = '';
+                
+                if (termInstance.current) {
+                    termInstance.current.clear();
+                    termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n');
+                    if (!fromRun) {
+                        termInstance.current.write('>>> ');
+                    }
+                }
+                
+                setEngineReady(false);
+                const w = new Worker('/pyworker.js?t=' + Date.now());
+                w.onmessage = (e) => {
+                    const { type, msg, uid, id, error, result } = e.data;
+                    if (type === 'stdout' || type === 'stderr') {
+                        if (termInstance.current) {
+                            const colorPrefix = type === 'stderr' ? '\x1b[31m' : '';
+                            const colorSuffix = type === 'stderr' ? '\x1b[0m' : '';
+                            termInstance.current.write(colorPrefix + msg.replace(/\n/g, '\r\n') + colorSuffix);
+                        }
+                    } else if (type === 'done' || type === 'error') {
+                        if (type === 'error' && termInstance.current) {
+                            termInstance.current.write('\x1b[31m' + error.replace(/\n/g, '\r\n') + '\x1b[0m\r\n');
+                        }
+                        if (type === 'done' && result !== undefined && termInstance.current) {
+                            termInstance.current.write(String(result).replace(/\n/g, '\r\n') + '\r\n');
+                        }
+                        
+                        if (id === 'run_main' || id.startsWith('repl_')) {
+                            if (termInstance.current) termInstance.current.write('>>> ');
+                            isReplRef.current = true;
+                        }
+
+                        if (type === 'error') {
+                            const currentCode = editorInstance.current ? editorInstance.current.getValue() : '';
+                            const base = analyze(error, currentCode);
+                            setRca({ ...base, llmLoading: true, streamText: '' });
+                            streamLLM(
+                                base.ins.title, error, base.lineCode,
+                                (accumulated) => setRca(p => p ? { ...p, streamText: accumulated } : p),
+                                (finalText) => {
+                                    const parsed = parseStreamedSections(finalText);
+                                    setRca(p => p ? { ...p, llmLoading: false, streamText: finalText, ins: { title: base.ins.title, symptom: parsed.symptom || base.ins.symptom, cause: parsed.cause || base.ins.cause, resolution: parsed.resolution || base.ins.resolution } } : p);
+                                },
+                                () => setRca(p => p ? { ...p, llmLoading: false, streamText: null } : p)
+                            );
+                        }
+                    }
+                };
+                
+                setWorker(w);
+                workerRef.current = w;
+                setEngineReady(true);
+            };
+
+            // Initialize Service Worker and Web Worker
+            useEffect(() => {
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('/sw.js').then(() => {
+                        if (navigator.serviceWorker.controller) {
+                            rebootWorker();
+                        } else {
+                            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                                if (!workerRef.current) rebootWorker();
+                            });
+                        }
+                    }).catch(err => {
+                        console.error("SW Registration failed:", err);
+                        rebootWorker(); // Fallback
+                    });
+                    
+                    navigator.serviceWorker.addEventListener('message', (event) => {
+                        if (event.data && event.data.type === 'input_requested') {
+                            pendingInputUidRef.current = event.data.uid;
+                            isWaitingForInputRef.current = true;
+                            isReplRef.current = false;
+                        }
+                    });
+                } else {
+                    rebootWorker();
+                }
+
+                return () => { if (workerRef.current) workerRef.current.terminate(); };
+            }, []);
+
+            const provideInput = async (value) => {
+                if (!pendingInputUidRef.current) return;
+                
+                const formData = new FormData();
+                formData.append('uid', pendingInputUidRef.current);
+                formData.append('value', value);
+                
+                pendingInputUidRef.current = null;
+                
+                await fetch('/__pyglide_provide_input__', {
+                    method: 'POST',
+                    body: formData
+                });
+            };
+
+            const run = async () => {
+                if (!editorInstance.current) return;
+                const currentCode = editorInstance.current.getValue() || '';
+                setRca(null);
+                
+                rebootWorker(true);
+                
+                isReplRef.current = false;
+                isWaitingForInputRef.current = false;
+                currentLineRef.current = '';
+                
+                workerRef.current.postMessage({ type: 'run', id: 'run_main', code: currentCode });
+            };
+            
+            const handleReplEnter = async (code) => {
+                if (!workerRef.current) return;
+                const trimmed = code.trim();
+                if (!trimmed) {
+                    if (termInstance.current) termInstance.current.write('>>> ');
+                    return;
+                }
+                
+                isReplRef.current = false;
+                workerRef.current.postMessage({ type: 'repl', id: 'repl_' + Date.now(), code: trimmed });
+            };
+
+
+
+            const toggleFolder = (id) => {
+                setFiles(prev => prev.map(f => f.id === id ? { ...f, isOpen: !f.isOpen } : f));
+            };
+
+            const confirmCreateItem = () => {
+                if (!newItemName.trim() || !creatingItem) {
+                    setCreatingItem(null);
+                    return;
+                }
+                let finalName = newItemName.trim();
+                if (creatingItem.type === 'file' && !finalName.endsWith('.py')) finalName += '.py';
+                
+                const isDuplicate = files.some(f => f.parentId === creatingItem.parentId && f.name === finalName);
+                if (isDuplicate) {
+                    alert(`An item named "${finalName}" already exists in this folder.`);
                     return;
                 }
 
-                // Main execution
-                try { await py.runPythonAsync(activeFile.content); }
-                catch (e) {
-                    const errStr = e.toString();
-                    setOut([...logs, errStr]);
-                    handleError(errStr);  // No await — streaming is non-blocking
-                }
+                const newId = Date.now().toString();
+                const newItem = { 
+                    id: newId, 
+                    name: finalName, 
+                    type: creatingItem.type,
+                    parentId: creatingItem.parentId,
+                    ...(creatingItem.type === 'file' ? { content: '' } : { isOpen: true })
+                };
+                
+                setFiles([...files, newItem]);
+                if (creatingItem.type === 'file') openFile(newId);
+                setCreatingItem(null);
+                setNewItemName('');
             };
 
-            const updateContent = (e) => {
-                const newVal = e.target.value;
-                setFiles(prev => prev.map(f => f.id === activeId ? { ...f, content: newVal } : f));
-                // Clear stale RCA when code is edited
-                if (rca) setRca(null);
+            const handleNewItemKeyDown = (e) => {
+                if (e.key === 'Enter') confirmCreateItem();
+                else if (e.key === 'Escape') setCreatingItem(null);
             };
 
-            // Insert 4 spaces on Tab instead of losing focus
-            const handleKeyDown = (e) => {
-                if (e.key === 'Tab') {
-                    e.preventDefault();
-                    const el = e.target;
-                    const start = el.selectionStart;
-                    const end = el.selectionEnd;
-                    const spaces = '    ';
-                    const newVal = el.value.substring(0, start) + spaces + el.value.substring(end);
-                    // Update state
-                    setFiles(prev => prev.map(f => f.id === activeId ? { ...f, content: newVal } : f));
-                    // Restore cursor position after state update
-                    requestAnimationFrame(() => {
-                        el.selectionStart = start + spaces.length;
-                        el.selectionEnd = start + spaces.length;
-                    });
-                }
+            const handleDragStart = (e, id) => {
+                e.dataTransfer.setData('text/plain', id);
+                setDraggedNodeId(id);
+                e.stopPropagation();
             };
 
-            const syncScroll = (e) => {
-                if (highlightRef.current) {
-                    highlightRef.current.scrollTop = e.target.scrollTop;
-                    highlightRef.current.scrollLeft = e.target.scrollLeft;
+            const handleDrop = (e, dropId) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverNodeId(null);
+                setDraggedNodeId(null);
+                
+                const dragId = e.dataTransfer.getData('text/plain');
+                if (!dragId || dragId === dropId) return;
+
+                const isDescendant = (childId, parentId) => {
+                    let current = files.find(f => f.id === childId);
+                    while (current && current.parentId) {
+                        if (current.parentId === parentId) return true;
+                        current = files.find(f => f.id === current.parentId);
+                    }
+                    return false;
+                };
+
+                if (dropId !== null && isDescendant(dropId, dragId)) {
+                    alert("Cannot move a folder into its own subfolder.");
+                    return;
                 }
-                if (lineNumbersRef.current) {
-                    lineNumbersRef.current.scrollTop = e.target.scrollTop;
+
+                setFiles(prev => {
+                    const newFiles = [...prev];
+                    const dragIndex = newFiles.findIndex(f => f.id === dragId);
+                    if (dragIndex === -1) return prev;
+                    
+                    const dragNode = newFiles[dragIndex];
+                    let targetParentId = null;
+                    let dropIndex = -1;
+
+                    if (dropId !== null) {
+                        const dropNode = newFiles.find(f => f.id === dropId);
+                        if (!dropNode) return prev;
+                        if (dropNode.type === 'folder') {
+                            targetParentId = dropId;
+                        } else {
+                            targetParentId = dropNode.parentId;
+                            dropIndex = newFiles.findIndex(f => f.id === dropId);
+                        }
+                    }
+
+                    const duplicate = newFiles.some(f => f.id !== dragId && f.parentId === targetParentId && f.name === dragNode.name);
+                    if (duplicate) {
+                        alert(`An item named "${dragNode.name}" already exists in the destination.`);
+                        return prev;
+                    }
+
+                    dragNode.parentId = targetParentId;
+                    newFiles.splice(dragIndex, 1);
+
+                    if (dropIndex !== -1) {
+                        // Adjust index if we removed an item before it
+                        if (dragIndex < dropIndex) dropIndex--;
+                        newFiles.splice(dropIndex, 0, dragNode);
+                    } else {
+                        newFiles.push(dragNode);
+                        if (dropId !== null) {
+                            const dropNode = newFiles.find(f => f.id === dropId);
+                            if (dropNode) dropNode.isOpen = true;
+                        }
+                    }
+                    return newFiles;
+                });
+            };
+
+            const renderTree = (parentId, level = 0) => {
+                const nodes = files.filter(f => f.parentId === parentId);
+                const children = nodes.map(f => {
+                    const isDragOver = dragOverNodeId === f.id;
+                    const styleBase = { 
+                        paddingLeft: `${10 + level * 15}px`, 
+                        border: isDragOver ? '1px dashed var(--accent)' : '1px solid transparent',
+                        background: isDragOver ? 'var(--accent-dim)' : ''
+                    };
+                    
+                    if (f.type === 'folder') {
+                        return (
+                            <div key={f.id}>
+                                <div className="file-item" 
+                                    style={{ ...styleBase, display: 'flex', justifyContent: 'space-between', fontWeight: 600 }} 
+                                    onClick={() => toggleFolder(f.id)}
+                                    draggable
+                                    onDragStart={(e) => handleDragStart(e, f.id)}
+                                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverNodeId(f.id); }}
+                                    onDragLeave={() => setDragOverNodeId(null)}
+                                    onDrop={(e) => handleDrop(e, f.id)}
+                                >
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                        {f.name}
+                                    </span>
+                                    <div style={{display:'flex', gap:'8px'}}>
+                                        <button onClick={(e) => { e.stopPropagation(); setCreatingItem({ type: 'file', parentId: f.id }); setNewItemName(''); if(!f.isOpen) toggleFolder(f.id); }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'0.9rem'}} title="New File">+</button>
+                                        <button onClick={(e) => { e.stopPropagation(); setCreatingItem({ type: 'folder', parentId: f.id }); setNewItemName(''); if(!f.isOpen) toggleFolder(f.id); }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'0.9rem'}} title="New Folder">📁</button>
+                                    </div>
+                                </div>
+                                {f.isOpen && renderTree(f.id, level + 1)}
+                            </div>
+                        );
+                    } else {
+                        return (
+                            <div key={f.id} 
+                                className={`file-item ${activeId === f.id ? 'active' : ''}`} 
+                                style={styleBase} 
+                                onClick={() => openFile(f.id)}
+                                draggable
+                                onDragStart={(e) => handleDragStart(e, f.id)}
+                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverNodeId(f.id); }}
+                                onDragLeave={() => setDragOverNodeId(null)}
+                                onDrop={(e) => handleDrop(e, f.id)}
+                            >
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                                    {f.name}
+                                </span>
+                            </div>
+                        );
+                    }
+                });
+
+                if (creatingItem && creatingItem.parentId === parentId) {
+                    children.push(
+                        <div key="new-item" className="file-item" style={{ paddingLeft: `${10 + level * 15}px`, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            {creatingItem.type === 'folder' 
+                                ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                            }
+                            <input 
+                                autoFocus 
+                                value={newItemName} 
+                                onChange={e => setNewItemName(e.target.value)} 
+                                onKeyDown={handleNewItemKeyDown} 
+                                onBlur={() => setCreatingItem(null)} 
+                                placeholder={creatingItem.type === 'folder' ? "folder_name" : "file_name.py"} 
+                                style={{background:'transparent', border:'none', outline:'none', color:'var(--text)', width:'100%', fontFamily:'inherit', fontSize:'inherit'}}
+                            />
+                        </div>
+                    );
                 }
+                return children;
             };
 
             return (
@@ -599,32 +1055,50 @@ RESOLUTION: [Two sentences: the specific fix to apply]`;
                     {view === 'stats' && <AnalyticsPanel onBack={()=>setView('editor')} />}
                     <aside className="sidebar">
                         <div className="logo">PYGLIDE</div>
-                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, letterSpacing:'1px', marginBottom:'15px', paddingLeft:'10px'}}>EXPLORER</div>
-                        {files.map(f => (
-                            <div key={f.id} className={`file-item ${activeId === f.id ? 'active' : ''}`} onClick={() => { setActiveId(f.id); setRca(null); setOut([]); }}>
-                                {f.name}
+                        <div 
+                            style={{
+                                display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px', paddingLeft:'10px', paddingRight:'10px',
+                                border: dragOverNodeId === 'root' ? '1px dashed var(--accent)' : '1px solid transparent',
+                                background: dragOverNodeId === 'root' ? 'var(--accent-dim)' : ''
+                            }}
+                            onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverNodeId('root'); }}
+                            onDragLeave={() => setDragOverNodeId(null)}
+                            onDrop={(e) => handleDrop(e, null)}
+                        >
+                            <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, letterSpacing:'1px'}}>EXPLORER</div>
+                            <div style={{display:'flex', gap:'10px'}}>
+                                <button onClick={() => { setCreatingItem({ type: 'file', parentId: null }); setNewItemName(''); }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'1rem', lineHeight:1}} title="New File">+</button>
+                                <button onClick={() => { setCreatingItem({ type: 'folder', parentId: null }); setNewItemName(''); }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'1rem', lineHeight:1}} title="New Folder">📁</button>
+                                <button onClick={downloadWorkspace} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'0.9rem', lineHeight:1}} title="Download Workspace">💾</button>
                             </div>
-                        ))}
+                        </div>
+                        {renderTree(null)}
                         <div style={{marginTop:'auto'}} className="file-item" onClick={()=>setView('stats')}>
                             <span style={{opacity: 0.6}}>ANALYTICS ENGINE</span>
                         </div>
                     </aside>
                     <div className="main">
                         <div className="toolbar">
-                            <button className="btn" onClick={run} disabled={!py}>{py ? "EXECUTE RUNTIME" : "LOADING ENGINE..."}</button>
+                            <button className="btn" onClick={run} disabled={!engineReady}>{engineReady ? "EXECUTE RUNTIME" : "LOADING ENGINE..."}</button>
                             <div style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:800, letterSpacing:'1px', display:'flex', alignItems:'center', gap:'8px'}}>
                                 <div style={{width:6, height:6, borderRadius:'50%', background:'var(--success)'}}></div> SYSTEM STANDBY
                             </div>
                         </div>
                         <div className="editor-zone">
                             <div className="editor-container">
-                                <div className="line-numbers" ref={lineNumbersRef}>
-                                    {Array.from({length: lineCount}, (_, i) => <div key={i}>{i+1}</div>)}
+                                <div className="tabs-container">
+                                    {openTabs.map(tId => {
+                                        const tFile = files.find(f => f.id === tId);
+                                        if (!tFile) return null;
+                                        return (
+                                            <div key={tId} className={`editor-tab ${activeId === tId ? 'active' : ''}`} onClick={() => openFile(tId)}>
+                                                <span>📄 {tFile.name}</span>
+                                                <span className="tab-close" onClick={(e) => closeTab(e, tId)}>×</span>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                                <div className="editor-view">
-                                    <pre className="code-highlight" ref={highlightRef} dangerouslySetInnerHTML={{ __html: highlightPython(activeFile.content) + "\n" }} />
-                                    <textarea className="code-input" value={activeFile.content} onChange={updateContent} onKeyDown={handleKeyDown} onScroll={syncScroll} spellCheck="false" />
-                                </div>
+                                <div id="monaco-container" ref={monacoRef}></div>
                             </div>
                             {rca && (
                                 <div className="rca-panel">
@@ -708,9 +1182,15 @@ RESOLUTION: [Two sentences: the specific fix to apply]`;
                                 </div>
                             )}
                         </div>
-                        <div className="terminal">
-                            <div style={{fontSize:'0.7rem', color:'var(--text-dim)', marginBottom:'12px', fontWeight:800, letterSpacing:'0.05em'}}>SYSTEM CONSOLE</div>
-                            {out.map((l, i) => <div key={i} style={{color: l.includes('Error') ? '#fca5a5' : '#e2e8f0', marginBottom:'6px', whiteSpace:'pre-wrap', lineHeight:'1.5'}}>{l}</div>)}
+                        <div className="terminal" style={{ height: `${termHeight}px` }}>
+                            <div className="terminal-resizer" onMouseDown={startResize}></div>
+                            <div className="terminal-header">
+                                <div>SYSTEM CONSOLE & REPL</div>
+                                <div style={{display:'flex', gap:'10px'}}>
+                                    <button onClick={() => { if(termInstance.current) { termInstance.current.clear(); termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n>>> '); } }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'0.7rem', fontWeight:700}}>CLEAR</button>
+                                </div>
+                            </div>
+                            <div id="xterm-container" ref={termRef}></div>
                         </div>
                     </div>
                 </div>
