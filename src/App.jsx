@@ -4,26 +4,30 @@ import {
   AlertTriangle,
   Bug,
   ChevronRight,
-  Code2,
-  Cpu,
-  Database,
   Download,
   Edit2,
   FileCode,
-  GitCompare,
   Lightbulb,
   Network,
   Play,
   RotateCcw,
-  SearchCode,
   Settings,
   TerminalSquare,
   UploadCloud,
   X,
+  Plus,
 } from 'lucide-react';
+
 import * as d3 from 'd3';
+
 import RCAPanel from './components/RCAPanel';
-import { executeCode, ingestBugsInPy, stopExecution, getEmbeddings } from './services/api';
+
+import {
+  executeCode,
+  ingestBugsInPy,
+  stopExecution,
+  getEmbeddings,
+} from './services/api';
 
 const DEFAULT_CODE = `import requests
 
@@ -41,13 +45,14 @@ const DEFAULT_FILES = [
   {
     id: 'imports',
     name: 'missing_import.py',
-    content: 'import numpyx\n\nprint(numpyx.array([1, 2, 3]))\n',
+    content: 'import numpyx\\n\\nprint(numpyx.array([1, 2, 3]))\\n',
     dirty: false,
   },
   {
     id: 'none',
     name: 'none_attribute.py',
-    content: 'def normalize(items):\n    items.append("ready")\n    return items\n\nprint(normalize(None))\n',
+    content:
+      'def normalize(items):\\n    items.append("ready")\\n    return items\\n\\nprint(normalize(None))\\n',
     dirty: false,
   },
 ];
@@ -85,38 +90,42 @@ const panelTitles = {
 function App() {
   const [files, setFiles] = useState(DEFAULT_FILES);
   const [activeFileId, setActiveFileId] = useState('main');
+
+  const [activePanel, setActivePanel] = useState('explorer');
+  const [activeTab, setActiveTab] = useState('rca');
+
   const [consoleLines, setConsoleLines] = useState([
-    { type: 'muted', text: 'Ready. Run code to capture traceback and semantic RCA.' },
+    {
+      type: 'muted',
+      text: 'Ready. Run code to capture traceback and semantic RCA.',
+    },
   ]);
+
   const [execution, setExecution] = useState(null);
   const [isExecuting, setIsExecuting] = useState(false);
-<<<<<<< HEAD
+
   const [isIndexing, setIsIndexing] = useState(false);
-  const [activeTab, setActiveTab] = useState('rca');
-  const [activePanel, setActivePanel] = useState('editor');
-  const [isVectorOpen, setIsVectorOpen] = useState(false);
   const [uploadError, setUploadError] = useState('');
-  const uploadInputRef = useRef(null);
-  const editorRef = useRef(null);
-  const decorationsRef = useRef([]);
-=======
-  const [rcaResult, setRcaResult] = useState(null);
-  const [output, setOutput] = useState([]);
+
   const [isCreatingFile, setIsCreatingFile] = useState(false);
   const [newFileName, setNewFileName] = useState('');
-  const { loading, error: pyodideError, runCode } = usePyodide();
-  const terminalEndRef = useRef(null);
->>>>>>> e1760932d783705b2bb1778118908315727d5041
+
+  const [isVectorOpen, setIsVectorOpen] = useState(false);
+
+  const editorRef = useRef(null);
+  const decorationsRef = useRef([]);
+  const uploadInputRef = useRef(null);
 
   const activeFile = useMemo(
     () => files.find((file) => file.id === activeFileId) || files[0],
-    [files, activeFileId],
+    [files, activeFileId]
   );
 
   const activePanelName = panelTitles[activePanel] || 'Editor';
 
   const updateEditorDecorations = (lineNumber = -1) => {
     const editor = editorRef.current;
+
     if (!editor) return;
 
     decorationsRef.current = editor.deltaDecorations(
@@ -137,7 +146,7 @@ function App() {
               },
             },
           ]
-        : [],
+        : []
     );
 
     if (lineNumber > 0) {
@@ -148,8 +157,10 @@ function App() {
   const updateFileContent = (newContent) => {
     setFiles((prev) =>
       prev.map((file) =>
-        file.id === activeFileId ? { ...file, content: newContent || '', dirty: true } : file,
-      ),
+        file.id === activeFileId
+          ? { ...file, content: newContent || '', dirty: true }
+          : file
+      )
     );
   };
 
@@ -158,52 +169,105 @@ function App() {
 
     setActivePanel('run');
     setIsExecuting(true);
-    setExecution(null);
-    setConsoleLines([{ type: 'muted', text: `python ${activeFile.name}` }]);
 
-    const result = await executeCode(activeFile.name, activeFile.content);
+    setExecution(null);
+
+    setConsoleLines([
+      { type: 'muted', text: `python ${activeFile.name}` },
+    ]);
+
+    const result = await executeCode(
+      activeFile.name,
+      activeFile.content
+    );
+
     setExecution(result);
 
     if (result.success) {
       setActivePanel('run');
       setActiveTab('visualization');
+
       updateEditorDecorations(-1);
+
       const stdoutLines = (result.stdout || '')
         .split('\n')
         .filter(Boolean)
-        .map((text) => ({ type: 'stdout', text }));
+        .map((text) => ({
+          type: 'stdout',
+          text,
+        }));
+
       const stderrLines = (result.stderr || '')
         .split('\n')
         .filter(Boolean)
-        .map((text) => ({ type: 'stderr', text }));
-      const lines = stdoutLines.length ? stdoutLines : [{ type: 'stdout', text: 'Process completed with no output.' }];
+        .map((text) => ({
+          type: 'stderr',
+          text,
+        }));
+
+      const lines = stdoutLines.length
+        ? stdoutLines
+        : [
+            {
+              type: 'stdout',
+              text: 'Process completed with no output.',
+            },
+          ];
+
       setConsoleLines([
         ...lines,
         ...stderrLines,
-        { type: 'muted', text: `Execution completed in ${result.execution_time || 'unknown'}.` },
+        {
+          type: 'muted',
+          text: `Execution completed in ${
+            result.execution_time || 'unknown'
+          }.`,
+        },
       ]);
     } else {
       setActivePanel('debug');
       setActiveTab('rca');
-      updateEditorDecorations(result.error?.line_number || -1);
+
+      updateEditorDecorations(
+        result.error?.line_number || -1
+      );
+
       const stdoutLines = (result.stdout || '')
         .split('\n')
         .filter(Boolean)
-        .map((text) => ({ type: 'stdout', text }));
-      const stderrLines = (result.stderr || result.traceback || '')
+        .map((text) => ({
+          type: 'stdout',
+          text,
+        }));
+
+      const stderrLines = (
+        result.stderr ||
+        result.traceback ||
+        ''
+      )
         .split('\n')
         .filter(Boolean)
-        .map((text) => ({ type: 'stderr', text }));
+        .map((text) => ({
+          type: 'stderr',
+          text,
+        }));
+
       setConsoleLines([
         ...stdoutLines,
         ...stderrLines,
         {
           type: 'stderr',
-          text: `${result.error?.type || 'Error'}: ${result.error?.message || 'Unknown failure'}`,
+          text: `${
+            result.error?.type || 'Error'
+          }: ${
+            result.error?.message || 'Unknown failure'
+          }`,
         },
         {
           type: 'muted',
-          text: `Semantic retrieval returned ${result.semantic_matches?.length ?? 0} historical matches.`,
+          text: `Semantic retrieval returned ${
+            result.semantic_matches?.length ?? 0
+          } historical matches.`,
         },
       ]);
     }
@@ -213,41 +277,82 @@ function App() {
 
   const handleIngest = async () => {
     setIsIndexing(true);
-    setConsoleLines([{ type: 'muted', text: 'Indexing BugsInPy patches into the semantic vector store...' }]);
 
-    const result = await ingestBugsInPy({ limit: 150, run_tests: false });
     setConsoleLines([
-      { type: result.error ? 'stderr' : 'stdout', text: result.error || `Indexed ${result.indexed} BugsInPy bug records.` },
-      { type: 'muted', text: 'Run code again to retrieve against the refreshed historical bug index.' },
+      {
+        type: 'muted',
+        text: 'Indexing BugsInPy patches into the semantic vector store...',
+      },
     ]);
+
+    const result = await ingestBugsInPy({
+      limit: 150,
+      run_tests: false,
+    });
+
+    setConsoleLines([
+      {
+        type: result.error ? 'stderr' : 'stdout',
+        text:
+          result.error ||
+          `Indexed ${result.indexed} BugsInPy bug records.`,
+      },
+      {
+        type: 'muted',
+        text: 'Run code again to retrieve against the refreshed historical bug index.',
+      },
+    ]);
+
     setIsIndexing(false);
   };
 
   const sendFileToDownload = () => {
-    const blob = new Blob([activeFile.content], { type: 'text/plain;charset=utf-8' });
+    const blob = new Blob([activeFile.content], {
+      type: 'text/plain;charset=utf-8',
+    });
+
     const url = URL.createObjectURL(blob);
+
     const anchor = document.createElement('a');
+
     anchor.href = url;
     anchor.download = activeFile.name || 'main.py';
+
     document.body.appendChild(anchor);
+
     anchor.click();
+
     document.body.removeChild(anchor);
+
     URL.revokeObjectURL(url);
   };
 
   const handleUploadFiles = async (fileList) => {
-    const accepted = Array.from(fileList).filter((file) => file.name.toLowerCase().endsWith('.py'));
+    const accepted = Array.from(fileList).filter((file) =>
+      file.name.toLowerCase().endsWith('.py')
+    );
+
     if (accepted.length === 0) {
       setUploadError('Only .py files are accepted.');
       return;
     }
 
     setUploadError('');
+
     for (const file of accepted) {
       const text = await file.text();
+
       const id = `upload-${Date.now()}-${file.name}`;
-      const newFile = { id, name: file.name, content: text, dirty: false };
+
+      const newFile = {
+        id,
+        name: file.name,
+        content: text,
+        dirty: false,
+      };
+
       setFiles((prev) => [...prev, newFile]);
+
       setActiveFileId(id);
       setActivePanel('explorer');
     }
@@ -255,14 +360,19 @@ function App() {
 
   const handleUploadSelection = (event) => {
     const fileList = event.target.files;
+
     if (!fileList) return;
+
     handleUploadFiles(fileList);
+
     event.target.value = '';
   };
 
   const handleDrop = (event) => {
     event.preventDefault();
+
     if (!event.dataTransfer) return;
+
     handleUploadFiles(event.dataTransfer.files);
   };
 
@@ -270,15 +380,6 @@ function App() {
     event.preventDefault();
   };
 
-<<<<<<< HEAD
-  const addNewFile = () => {
-    const id = `file-${Date.now()}`;
-    const name = `untitled-${files.length + 1}.py`;
-    const newFile = { id, name, content: '# New Python file\n', dirty: false };
-    setFiles((prev) => [...prev, newFile]);
-    setActiveFileId(id);
-    setActivePanel('explorer');
-=======
   const handleCreateFile = () => {
     setIsCreatingFile(true);
     setNewFileName('');
@@ -289,21 +390,26 @@ function App() {
       setIsCreatingFile(false);
       return;
     }
-    
+
     let finalName = newFileName.trim();
+
     if (!finalName.endsWith('.py')) {
       finalName += '.py';
     }
 
     const newId = Date.now().toString();
+
     const newFile = {
       id: newId,
       name: finalName,
-      content: '# New Python file\n'
+      content: '# New Python file\n',
+      dirty: false,
     };
-    
-    setFiles([...files, newFile]);
+
+    setFiles((prev) => [...prev, newFile]);
+
     setActiveFileId(newId);
+
     setIsCreatingFile(false);
     setNewFileName('');
   };
@@ -314,115 +420,150 @@ function App() {
     } else if (e.key === 'Escape') {
       setIsCreatingFile(false);
     }
->>>>>>> e1760932d783705b2bb1778118908315727d5041
   };
 
   const renameFile = (fileId) => {
     const file = files.find((item) => item.id === fileId);
+
     if (!file) return;
-    const newName = window.prompt('Rename file', file.name);
+
+    const newName = window.prompt(
+      'Rename file',
+      file.name
+    );
+
     if (!newName || !newName.trim()) return;
+
     if (!newName.toLowerCase().endsWith('.py')) {
       window.alert('Filename must end with .py');
       return;
     }
-    setFiles((prev) => prev.map((item) => (item.id === fileId ? { ...item, name: newName.trim() } : item)));
+
+    setFiles((prev) =>
+      prev.map((item) =>
+        item.id === fileId
+          ? { ...item, name: newName.trim() }
+          : item
+      )
+    );
   };
 
   const deleteFile = (fileId) => {
     if (files.length === 1) return;
-    setFiles((prev) => prev.filter((file) => file.id !== fileId));
-    if (activeFileId === fileId) {
-      setActiveFileId(files[0].id);
+
+    const updated = files.filter(
+      (file) => file.id !== fileId
+    );
+
+    setFiles(updated);
+
+    if (
+      activeFileId === fileId &&
+      updated.length > 0
+    ) {
+      setActiveFileId(updated[0].id);
     }
   };
 
   const stopRunningExecution = async () => {
     const result = await stopExecution();
+
     setConsoleLines((prev) => [
       ...prev,
-      { type: result.success ? 'stdout' : 'stderr', text: result.message || 'Stop request completed.' },
+      {
+        type: result.success ? 'stdout' : 'stderr',
+        text:
+          result.message ||
+          'Stop request completed.',
+      },
     ]);
+
     setIsExecuting(false);
   };
 
   const renderPanelContent = () => {
     if (activePanel === 'explorer') {
       return (
-        <div className="panel-empty">
-          <h3>File Explorer</h3>
-          <p>Use the left sidebar to create, rename, delete, and open Python files. Uploaded files appear here immediately.</p>
-        </div>
-<<<<<<< HEAD
-      );
-    }
+        <div
+          className="file-section"
+          style={{ flex: 1 }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: '1rem',
+              padding: '0 0.5rem',
+            }}
+          >
+            <span
+              style={{
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                color: 'var(--text-secondary)',
+                textTransform: 'uppercase',
+              }}
+            >
+              Explorer
+            </span>
 
-    if (activePanel === 'run') {
-      return (
-        <div className="panel-empty">
-          <h3>Run Workspace</h3>
-          <p>Press Run to execute the current active file. The terminal will show stdout, stderr, and traceback output.</p>
-          <div className="explorer-controls" style={{ marginTop: '1rem' }}>
-            <button className="secondary-button" onClick={handleRun} disabled={isExecuting}>
-              {isExecuting ? 'Running...' : 'Run current file'}
-            </button>
-            <button className="secondary-button" onClick={() => setActivePanel('terminal')}>
-              View Terminal
-=======
-        
-        <div className="file-section" style={{ flex: 1 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', padding: '0 0.5rem' }}>
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>Explorer</span>
-            <button onClick={handleCreateFile} className="btn-icon" title="New File">
+            <button
+              onClick={handleCreateFile}
+              className="btn-icon"
+              title="New File"
+            >
               <Plus size={14} />
->>>>>>> e1760932d783705b2bb1778118908315727d5041
             </button>
           </div>
+
           {execution && (
-            <div className="explorer-summary" style={{ marginTop: '1rem' }}>
+            <div
+              className="explorer-summary"
+              style={{ marginTop: '1rem' }}
+            >
               <div className="viz-item">
-                <span className="viz-item-key">Last file</span>
-                <span>{execution.filename || activeFile.name}</span>
-              </div>
-<<<<<<< HEAD
-              <div className="viz-item">
-                <span className="viz-item-key">Last runtime</span>
-                <span>{execution.execution_time || 'N/A'}</span>
-              </div>
-              <div className="viz-item">
-                <span className="viz-item-key">Status</span>
-                <span>{execution.success ? 'Success' : 'Error'}</span>
+                <span className="viz-item-key">
+                  Last file
+                </span>
+
+                <span>
+                  {execution.filename ||
+                    activeFile.name}
+                </span>
               </div>
             </div>
           )}
-=======
-            ))}
-            {isCreatingFile && (
-              <div className="file-item new-file-input-wrapper">
-                <FileCode size={16} />
-                <input
-                  type="text"
-                  autoFocus
-                  value={newFileName}
-                  onChange={(e) => setNewFileName(e.target.value)}
-                  onKeyDown={handleNewFileKeyDown}
-                  onBlur={() => setIsCreatingFile(false)}
-                  placeholder="filename.py"
-                  className="new-file-input"
-                  style={{ 
-                    flex: 1, 
-                    background: 'transparent', 
-                    border: 'none', 
-                    color: 'inherit', 
-                    outline: 'none',
-                    fontFamily: 'inherit',
-                    fontSize: 'inherit'
-                  }}
-                />
-              </div>
-            )}
-          </div>
->>>>>>> e1760932d783705b2bb1778118908315727d5041
+
+          {isCreatingFile && (
+            <div className="file-item new-file-input-wrapper">
+              <FileCode size={16} />
+
+              <input
+                type="text"
+                autoFocus
+                value={newFileName}
+                onChange={(e) =>
+                  setNewFileName(e.target.value)
+                }
+                onKeyDown={handleNewFileKeyDown}
+                onBlur={() =>
+                  setIsCreatingFile(false)
+                }
+                placeholder="filename.py"
+                className="new-file-input"
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: 'none',
+                  color: 'inherit',
+                  outline: 'none',
+                  fontFamily: 'inherit',
+                  fontSize: 'inherit',
+                }}
+              />
+            </div>
+          )}
         </div>
       );
     }
@@ -431,13 +572,30 @@ function App() {
       return (
         <div className="panel-empty">
           <h3>Terminal</h3>
-          <p>All program output is captured below, including stdout, stderr, and traceback details.</p>
-          <div className="terminal-output" style={{ marginTop: '1rem', minHeight: '260px' }}>
+
+          <p>
+            All program output is captured below,
+            including stdout, stderr, and traceback
+            details.
+          </p>
+
+          <div
+            className="terminal-output"
+            style={{
+              marginTop: '1rem',
+              minHeight: '260px',
+            }}
+          >
             {consoleLines.length === 0 ? (
-              <span style={{ opacity: 0.45 }}>Run the code to see output...</span>
+              <span style={{ opacity: 0.45 }}>
+                Run the code to see output...
+              </span>
             ) : (
               consoleLines.map((line, index) => (
-                <div key={index} className={line.type}>
+                <div
+                  key={index}
+                  className={line.type}
+                >
                   {line.text}
                 </div>
               ))
@@ -451,25 +609,54 @@ function App() {
       return (
         <div className="panel-empty">
           <h3>Settings & Shortcuts</h3>
-          <ul style={{ listStyle: 'none', paddingLeft: 0, marginTop: '1rem' }}>
+
+          <ul
+            style={{
+              listStyle: 'none',
+              paddingLeft: 0,
+              marginTop: '1rem',
+            }}
+          >
             <li>Ctrl+Enter — Run</li>
             <li>Ctrl+O — Upload</li>
             <li>Ctrl+S — Download current file</li>
-            <li>Ctrl+Shift+D — Download file</li>
-            <li>Ctrl+Shift+V — Open vector visualization</li>
+            <li>
+              Ctrl+Shift+D — Download file
+            </li>
+            <li>
+              Ctrl+Shift+V — Open vector
+              visualization
+            </li>
           </ul>
         </div>
       );
     }
 
-    if (activePanel === 'debug' || activePanel === 'semantic') {
-      return <RCAPanel execution={execution} activeTab={activeTab} onTabChange={setActiveTab} />;
+    if (
+      activePanel === 'debug' ||
+      activePanel === 'semantic'
+    ) {
+      return (
+        <RCAPanel
+          execution={execution}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        />
+      );
     }
 
     return (
       <div className="panel-empty">
-        <h3>{panelTitles[activePanel] || 'Workspace'}</h3>
-        <p>Use the left sidebar to open panels, upload files, or launch the semantic debugger.</p>
+        <h3>
+          {panelTitles[activePanel] ||
+            'Workspace'}
+        </h3>
+
+        <p>
+          Use the left sidebar to open panels,
+          upload files, or launch the semantic
+          debugger.
+        </p>
       </div>
     );
   };
@@ -479,20 +666,24 @@ function App() {
       uploadInputRef.current?.click();
       return;
     }
+
     if (panelKey === 'download') {
       sendFileToDownload();
       return;
     }
+
     if (panelKey === 'vector') {
       setActivePanel('vector');
       setIsVectorOpen(true);
       return;
     }
+
     if (panelKey === 'semantic') {
       setActivePanel('semantic');
       setActiveTab('matches');
       return;
     }
+
     setActivePanel(panelKey);
   };
 
@@ -502,35 +693,56 @@ function App() {
 
   useEffect(() => {
     const keyListener = (event) => {
-      const isMeta = event.ctrlKey || event.metaKey;
+      const isMeta =
+        event.ctrlKey || event.metaKey;
+
       if (!isMeta) return;
 
       const key = event.key.toLowerCase();
+
       if (key === 'enter') {
         event.preventDefault();
         handleRun();
       }
+
       if (key === 's') {
         event.preventDefault();
         sendFileToDownload();
       }
+
       if (key === 'o') {
         event.preventDefault();
         uploadInputRef.current?.click();
       }
-      if (key === 'd' && event.shiftKey) {
+
+      if (
+        key === 'd' &&
+        event.shiftKey
+      ) {
         event.preventDefault();
         sendFileToDownload();
       }
-      if (key === 'v' && event.shiftKey) {
+
+      if (
+        key === 'v' &&
+        event.shiftKey
+      ) {
         event.preventDefault();
         setActivePanel('vector');
         setIsVectorOpen(true);
       }
     };
 
-    window.addEventListener('keydown', keyListener);
-    return () => window.removeEventListener('keydown', keyListener);
+    window.addEventListener(
+      'keydown',
+      keyListener
+    );
+
+    return () =>
+      window.removeEventListener(
+        'keydown',
+        keyListener
+      );
   }, [activeFile, isExecuting]);
 
   return (
@@ -547,12 +759,19 @@ function App() {
       <aside className="activity-bar">
         {PANEL_BUTTONS.map((button) => {
           const Icon = button.icon;
+
           return (
             <button
               key={button.key}
-              className={`activity-button ${activePanel === button.key ? 'active' : ''}`}
+              className={`activity-button ${
+                activePanel === button.key
+                  ? 'active'
+                  : ''
+              }`}
               title={button.label}
-              onClick={() => selectPanel(button.key)}
+              onClick={() =>
+                selectPanel(button.key)
+              }
             >
               <Icon />
             </button>
@@ -560,38 +779,89 @@ function App() {
         })}
       </aside>
 
-      <div className="explorer" onDrop={handleDrop} onDragOver={handleDragOver}>
+      <div
+        className="explorer"
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+      >
         <div className="brand">
           <FileCode size={20} />
+
           <div>
             <strong>Semantic IDE</strong>
-            <span>{panelTitles[activePanel] || 'Traceback + Vector Search'}</span>
+
+            <span>
+              {panelTitles[activePanel] ||
+                'Traceback + Vector Search'}
+            </span>
           </div>
         </div>
 
         <div className="panel-actions">
-          <button className="secondary-button" onClick={addNewFile}>
+          <button
+            className="secondary-button"
+            onClick={handleCreateFile}
+          >
             <Play size={14} /> New File
           </button>
-          <button className="secondary-button" onClick={() => uploadInputRef.current?.click()}>
+
+          <button
+            className="secondary-button"
+            onClick={() =>
+              uploadInputRef.current?.click()
+            }
+          >
             <UploadCloud size={14} /> Upload
           </button>
         </div>
 
         <div className="panel-title">Files</div>
+
         <div className="file-row-list">
           {files.map((file) => (
-            <div key={file.id} className={`file-row ${activeFileId === file.id ? 'selected' : ''}`}>
-              <button className="file-row-button" onClick={() => setActiveFileId(file.id)}>
+            <div
+              key={file.id}
+              className={`file-row ${
+                activeFileId === file.id
+                  ? 'selected'
+                  : ''
+              }`}
+            >
+              <button
+                className="file-row-button"
+                onClick={() =>
+                  setActiveFileId(file.id)
+                }
+              >
                 <FileCode size={14} />
+
                 <span>{file.name}</span>
-                {file.dirty && <span className="dirty-indicator">●</span>}
+
+                {file.dirty && (
+                  <span className="dirty-indicator">
+                    ●
+                  </span>
+                )}
               </button>
+
               <div className="file-row-actions">
-                <button className="icon-button small" onClick={() => renameFile(file.id)} title="Rename file">
+                <button
+                  className="icon-button small"
+                  onClick={() =>
+                    renameFile(file.id)
+                  }
+                  title="Rename file"
+                >
                   <Edit2 size={14} />
                 </button>
-                <button className="icon-button small" onClick={() => deleteFile(file.id)} title="Delete file">
+
+                <button
+                  className="icon-button small"
+                  onClick={() =>
+                    deleteFile(file.id)
+                  }
+                  title="Delete file"
+                >
                   <X size={14} />
                 </button>
               </div>
@@ -602,18 +872,38 @@ function App() {
         <div className="index-card">
           <div>
             <strong>Vector Store</strong>
-            <span>{execution?.semantic_matches ? `${execution.semantic_matches.length} matches` : 'No query yet'}</span>
+
+            <span>
+              {execution?.semantic_matches
+                ? `${execution.semantic_matches.length} matches`
+                : 'No query yet'}
+            </span>
           </div>
-          <button className="secondary-button" onClick={handleIngest} disabled={isIndexing}>
+
+          <button
+            className="secondary-button"
+            onClick={handleIngest}
+            disabled={isIndexing}
+          >
             <RotateCcw size={14} />
-            {isIndexing ? 'Indexing...' : 'Sync BugsInPy'}
+
+            {isIndexing
+              ? 'Indexing...'
+              : 'Sync BugsInPy'}
           </button>
         </div>
 
-        {uploadError && <div className="error-banner">{uploadError}</div>}
+        {uploadError && (
+          <div className="error-banner">
+            {uploadError}
+          </div>
+        )}
 
         <div className="upload-dropzone">
-          <p>Drag and drop .py files here to upload and edit.</p>
+          <p>
+            Drag and drop .py files here to upload
+            and edit.
+          </p>
         </div>
       </div>
 
@@ -621,18 +911,37 @@ function App() {
         <header className="topbar">
           <div className="breadcrumbs">
             <span>{activeFile.name}</span>
+
             <ChevronRight size={14} />
+
             <span>{activePanelName}</span>
           </div>
+
           <div className="actions">
-            <button className="run-button" onClick={handleRun} disabled={isExecuting}>
+            <button
+              className="run-button"
+              onClick={handleRun}
+              disabled={isExecuting}
+            >
               <Play size={14} />
-              {isExecuting ? 'Running...' : 'Run'}
+
+              {isExecuting
+                ? 'Running...'
+                : 'Run'}
             </button>
-            <button className="secondary-button" onClick={stopRunningExecution} disabled={!isExecuting}>
+
+            <button
+              className="secondary-button"
+              onClick={stopRunningExecution}
+              disabled={!isExecuting}
+            >
               <AlertTriangle size={14} /> Stop
             </button>
-            <button className="secondary-button" onClick={sendFileToDownload}>
+
+            <button
+              className="secondary-button"
+              onClick={sendFileToDownload}
+            >
               <Download size={14} /> Download
             </button>
           </div>
@@ -640,12 +949,34 @@ function App() {
 
         <div className="editor-tabs">
           {files.map((file) => (
-            <div key={file.id} className={`editor-tab-button ${activeFileId === file.id ? 'active' : ''}`}>
-              <button onClick={() => setActiveFileId(file.id)}>
+            <div
+              key={file.id}
+              className={`editor-tab-button ${
+                activeFileId === file.id
+                  ? 'active'
+                  : ''
+              }`}
+            >
+              <button
+                onClick={() =>
+                  setActiveFileId(file.id)
+                }
+              >
                 {file.name}
-                {file.dirty && <span className="dirty-indicator">●</span>}
+
+                {file.dirty && (
+                  <span className="dirty-indicator">
+                    ●
+                  </span>
+                )}
               </button>
-              <button className="close-tab" onClick={() => onTabClose(file.id)}>
+
+              <button
+                className="close-tab"
+                onClick={() =>
+                  onTabClose(file.id)
+                }
+              >
                 <X size={12} />
               </button>
             </div>
@@ -656,7 +987,7 @@ function App() {
           <section className="editor-area">
             <Editor
               height="100%"
-              defaultLanguage="python"
+              language="python"
               theme="vs-dark"
               value={activeFile.content}
               onChange={updateFileContent}
@@ -689,7 +1020,11 @@ function App() {
               {DEBUG_TABS.map((tab) => (
                 <button
                   key={tab.key}
-                  className={activeTab === tab.key ? 'active' : ''}
+                  className={
+                    activeTab === tab.key
+                      ? 'active'
+                      : ''
+                  }
                   onClick={() => {
                     setActivePanel('debug');
                     setActiveTab(tab.key);
@@ -699,6 +1034,7 @@ function App() {
                 </button>
               ))}
             </div>
+
             <div className="debug-content">
               {renderPanelContent()}
             </div>
@@ -707,22 +1043,41 @@ function App() {
 
         <footer className="terminal-container">
           <div className="terminal-header">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+              }}
+            >
               <TerminalSquare size={14} />
+
               Console Output
             </div>
+
             <div className="terminal-actions">
-              <button className="secondary-button" onClick={() => setConsoleLines([])}>
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  setConsoleLines([])
+                }
+              >
                 Clear
               </button>
             </div>
           </div>
+
           <div className="terminal-output">
             {consoleLines.length === 0 ? (
-              <span style={{ opacity: 0.45 }}>Run the code to see output...</span>
+              <span style={{ opacity: 0.45 }}>
+                Run the code to see output...
+              </span>
             ) : (
               consoleLines.map((line, index) => (
-                <div key={index} className={line.type}>
+                <div
+                  key={index}
+                  className={line.type}
+                >
                   {line.text}
                 </div>
               ))
@@ -732,64 +1087,140 @@ function App() {
       </main>
 
       {isVectorOpen && (
-        <VectorModal open={isVectorOpen} onClose={() => setIsVectorOpen(false)} execution={execution} />
+        <VectorModal
+          open={isVectorOpen}
+          onClose={() =>
+            setIsVectorOpen(false)
+          }
+          execution={execution}
+        />
       )}
     </div>
   );
 }
 
-function VectorModal({ open, onClose, execution }) {
+function VectorModal({
+  open,
+  onClose,
+  execution,
+}) {
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState(null);
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [selected, setSelected] =
+    useState(null);
+
   const [zoom, setZoom] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const [dragStart, setDragStart] = useState(null);
+
+  const [offset, setOffset] = useState({
+    x: 0,
+    y: 0,
+  });
+
+  const [dragStart, setDragStart] =
+    useState(null);
 
   const normalizeVector = (vector) => {
-    const values = Array.isArray(vector) ? vector : [];
-    const norm = Math.sqrt(values.reduce((sum, value) => sum + value * value, 0));
-    return norm > 0 ? values.map((value) => value / norm) : values;
+    const values = Array.isArray(vector)
+      ? vector
+      : [];
+
+    const norm = Math.sqrt(
+      values.reduce(
+        (sum, value) => sum + value * value,
+        0
+      )
+    );
+
+    return norm > 0
+      ? values.map((value) => value / norm)
+      : values;
   };
 
-  const cosineDistance = (a = [], b = []) => {
+  const cosineDistance = (
+    a = [],
+    b = []
+  ) => {
     const na = normalizeVector(a);
     const nb = normalizeVector(b);
-    if (na.length === 0 || nb.length === 0) return Infinity;
-    const len = Math.min(na.length, nb.length);
-    const dot = na.slice(0, len).reduce((sum, value, index) => sum + value * nb[index], 0);
-    return 1 - Math.max(-1, Math.min(1, dot));
+
+    if (na.length === 0 || nb.length === 0)
+      return Infinity;
+
+    const len = Math.min(
+      na.length,
+      nb.length
+    );
+
+    const dot = na
+      .slice(0, len)
+      .reduce(
+        (sum, value, index) =>
+          sum + value * nb[index],
+        0
+      );
+
+    return (
+      1 -
+      Math.max(-1, Math.min(1, dot))
+    );
   };
 
   useEffect(() => {
     if (!open) return;
+
     let mounted = true;
 
     const load = async () => {
       setLoading(true);
+
       try {
-        const response = await getEmbeddings();
+        const response =
+          await getEmbeddings();
+
         if (!mounted) return;
-        const records = response.records || [];
+
+        const records =
+          response.records || [];
+
         const graphNodes = records
-          .filter((record) => Array.isArray(record.embedding) && record.embedding.length > 0)
+          .filter(
+            (record) =>
+              Array.isArray(
+                record.embedding
+              ) &&
+              record.embedding.length > 0
+          )
           .map((record) => ({
             ...record,
             id: record.id,
-            label: record.metadata?.exception_type || record.id,
-            cluster: record.metadata?.exception_type || 'Unknown',
+            label:
+              record.metadata
+                ?.exception_type ||
+              record.id,
+            cluster:
+              record.metadata
+                ?.exception_type ||
+              'Unknown',
             x: 0,
             y: 0,
-            embedding: record.embedding || [],
+            embedding:
+              record.embedding || [],
           }));
 
-        if (execution?.query_embedding?.length) {
+        if (
+          execution?.query_embedding
+            ?.length
+        ) {
           graphNodes.push({
             id: 'query',
             label: 'Runtime Error',
             cluster: 'Current Error',
-            embedding: execution.query_embedding,
+            embedding:
+              execution.query_embedding,
             query: true,
             x: 0,
             y: 0,
@@ -797,51 +1228,124 @@ function VectorModal({ open, onClose, execution }) {
         }
 
         const allNodes = graphNodes;
+
         const linkCandidates = [];
-        for (let i = 0; i < allNodes.length; i += 1) {
+
+        for (
+          let i = 0;
+          i < allNodes.length;
+          i += 1
+        ) {
           const source = allNodes[i];
+
           const distances = allNodes
             .map((target, idx) => ({
               target,
               idx,
-              distance: i === idx ? Infinity : cosineDistance(source.embedding || [], target.embedding || []),
+              distance:
+                i === idx
+                  ? Infinity
+                  : cosineDistance(
+                      source.embedding ||
+                        [],
+                      target.embedding ||
+                        []
+                    ),
             }))
-            .sort((a, b) => a.distance - b.distance)
+            .sort(
+              (a, b) =>
+                a.distance - b.distance
+            )
             .slice(0, 2);
+
           distances.forEach((neighbor) => {
-            if (Number.isFinite(neighbor.distance)) {
-              linkCandidates.push({ source: source.id, target: neighbor.target.id });
+            if (
+              Number.isFinite(
+                neighbor.distance
+              )
+            ) {
+              linkCandidates.push({
+                source: source.id,
+                target: neighbor.target.id,
+              });
             }
           });
         }
 
         const width = 1000;
         const height = 600;
-        const simulation = d3.forceSimulation(allNodes)
-          .force('charge', d3.forceManyBody().strength(-120))
-          .force('link', d3.forceLink(linkCandidates).id((node) => node.id).distance(140).strength(0.3))
-          .force('center', d3.forceCenter(width / 2, height / 2))
-          .force('collision', d3.forceCollide(32));
 
-        for (let i = 0; i < 120; i += 1) {
+        const simulation =
+          d3
+            .forceSimulation(allNodes)
+            .force(
+              'charge',
+              d3
+                .forceManyBody()
+                .strength(-120)
+            )
+            .force(
+              'link',
+              d3
+                .forceLink(linkCandidates)
+                .id((node) => node.id)
+                .distance(140)
+                .strength(0.3)
+            )
+            .force(
+              'center',
+              d3.forceCenter(
+                width / 2,
+                height / 2
+              )
+            )
+            .force(
+              'collision',
+              d3.forceCollide(32)
+            );
+
+        for (
+          let i = 0;
+          i < 120;
+          i += 1
+        ) {
           simulation.tick();
         }
+
         simulation.stop();
 
-        setNodes(allNodes.map((node) => ({
-          ...node,
-          color: node.query ? '#3fb950' : node.cluster === 'Current Error' ? '#3fb950' : node.cluster === 'Unknown' ? '#8b949e' : '#58a6ff',
-          radius: node.query ? 16 : 10,
-        })));
+        setNodes(
+          allNodes.map((node) => ({
+            ...node,
+            color: node.query
+              ? '#3fb950'
+              : node.cluster ===
+                'Current Error'
+              ? '#3fb950'
+              : node.cluster ===
+                'Unknown'
+              ? '#8b949e'
+              : '#58a6ff',
+            radius: node.query
+              ? 16
+              : 10,
+          }))
+        );
+
         setLinks(linkCandidates);
       } catch (err) {
-        console.error('Vector modal load error', err);
+        console.error(
+          'Vector modal load error',
+          err
+        );
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted)
+          setLoading(false);
       }
     };
 
     load();
+
     return () => {
       mounted = false;
     };
@@ -849,17 +1353,32 @@ function VectorModal({ open, onClose, execution }) {
 
   const handleZoom = (event) => {
     event.preventDefault();
-    const delta = event.deltaY > 0 ? -0.1 : 0.1;
-    setZoom((current) => Math.max(0.4, Math.min(2, current + delta)));
+
+    const delta =
+      event.deltaY > 0 ? -0.1 : 0.1;
+
+    setZoom((current) =>
+      Math.max(
+        0.4,
+        Math.min(2, current + delta)
+      )
+    );
   };
 
   const handleMouseDown = (event) => {
-    setDragStart({ x: event.clientX - offset.x, y: event.clientY - offset.y });
+    setDragStart({
+      x: event.clientX - offset.x,
+      y: event.clientY - offset.y,
+    });
   };
 
   const handleMouseMove = (event) => {
     if (!dragStart) return;
-    setOffset({ x: event.clientX - dragStart.x, y: event.clientY - dragStart.y });
+
+    setOffset({
+      x: event.clientX - dragStart.x,
+      y: event.clientY - dragStart.y,
+    });
   };
 
   const handleMouseUp = () => {
@@ -868,25 +1387,52 @@ function VectorModal({ open, onClose, execution }) {
 
   const metrics = useMemo(() => {
     const total = nodes.length;
-    const clusters = nodes.reduce((acc, node) => {
-      const key = node.cluster || 'Unknown';
-      acc[key] = (acc[key] || 0) + 1;
-      return acc;
-    }, {});
+
+    const clusters = nodes.reduce(
+      (acc, node) => {
+        const key =
+          node.cluster || 'Unknown';
+
+        acc[key] = (acc[key] || 0) + 1;
+
+        return acc;
+      },
+      {}
+    );
+
     return { total, clusters };
   }, [nodes]);
 
   if (!open) return null;
 
   return (
-    <div className="modal-backdrop" onMouseMove={handleMouseMove} onMouseUp={handleMouseUp}>
-      <div className="vector-modal" onWheel={handleZoom}>
+    <div
+      className="modal-backdrop"
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+    >
+      <div
+        className="vector-modal"
+        onWheel={handleZoom}
+      >
         <div className="vector-header">
           <div>
-            <h2>Vector Analytics Dashboard</h2>
-            <p>Interactive semantic embedding graph of runtime errors and historical bug matches.</p>
+            <h2>
+              Vector Analytics Dashboard
+            </h2>
+
+            <p>
+              Interactive semantic embedding
+              graph of runtime errors and
+              historical bug matches.
+            </p>
           </div>
-          <button className="icon-button" onClick={onClose} title="Close visualization">
+
+          <button
+            className="icon-button"
+            onClick={onClose}
+            title="Close visualization"
+          >
             <X size={18} />
           </button>
         </div>
@@ -894,14 +1440,41 @@ function VectorModal({ open, onClose, execution }) {
         <div className="vector-body">
           <div className="graph-panel">
             {loading ? (
-              <div className="loader-panel">Loading vector visualization...</div>
+              <div className="loader-panel">
+                Loading vector visualization...
+              </div>
             ) : (
-              <svg className="graph-svg" viewBox="0 0 1000 600" onMouseDown={handleMouseDown}>
-                <g transform={`translate(${offset.x},${offset.y}) scale(${zoom})`}>
+              <svg
+                className="graph-svg"
+                viewBox="0 0 1000 600"
+                onMouseDown={
+                  handleMouseDown
+                }
+              >
+                <g
+                  transform={`translate(${offset.x},${offset.y}) scale(${zoom})`}
+                >
                   {links.map((link, idx) => {
-                    const source = nodes.find((node) => node.id === link.source);
-                    const target = nodes.find((node) => node.id === link.target);
-                    if (!source || !target) return null;
+                    const source =
+                      nodes.find(
+                        (node) =>
+                          node.id ===
+                          link.source
+                      );
+
+                    const target =
+                      nodes.find(
+                        (node) =>
+                          node.id ===
+                          link.target
+                      );
+
+                    if (
+                      !source ||
+                      !target
+                    )
+                      return null;
+
                     return (
                       <line
                         key={`link-${idx}`}
@@ -914,17 +1487,39 @@ function VectorModal({ open, onClose, execution }) {
                       />
                     );
                   })}
+
                   {nodes.map((node) => (
-                    <g key={node.id} transform={`translate(${node.x},${node.y})`}>
+                    <g
+                      key={node.id}
+                      transform={`translate(${node.x},${node.y})`}
+                    >
                       <circle
                         r={node.radius}
                         fill={node.color}
-                        stroke={selected?.id === node.id ? '#ffffff' : 'rgba(255,255,255,0.15)'}
-                        strokeWidth={selected?.id === node.id ? 2.5 : 1}
+                        stroke={
+                          selected?.id ===
+                          node.id
+                            ? '#ffffff'
+                            : 'rgba(255,255,255,0.15)'
+                        }
+                        strokeWidth={
+                          selected?.id ===
+                          node.id
+                            ? 2.5
+                            : 1
+                        }
                         cursor="pointer"
-                        onClick={() => setSelected(node)}
+                        onClick={() =>
+                          setSelected(node)
+                        }
                       />
-                      <text x={node.radius + 6} y={4} fill="#c9d1d9" fontSize="12px">
+
+                      <text
+                        x={node.radius + 6}
+                        y={4}
+                        fill="#c9d1d9"
+                        fontSize="12px"
+                      >
                         {node.label}
                       </text>
                     </g>
@@ -936,22 +1531,55 @@ function VectorModal({ open, onClose, execution }) {
 
           <aside className="vector-sidebar">
             <div className="vector-toolbar">
-              <button className="secondary-button" onClick={() => setZoom((current) => Math.min(2, current + 0.2))}>
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  setZoom((current) =>
+                    Math.min(
+                      2,
+                      current + 0.2
+                    )
+                  )
+                }
+              >
                 Zoom In
               </button>
-              <button className="secondary-button" onClick={() => setZoom((current) => Math.max(0.4, current - 0.2))}>
+
+              <button
+                className="secondary-button"
+                onClick={() =>
+                  setZoom((current) =>
+                    Math.max(
+                      0.4,
+                      current - 0.2
+                    )
+                  )
+                }
+              >
                 Zoom Out
               </button>
             </div>
+
             <div className="sidebar-card">
               <h4>Analytics</h4>
+
               <div className="detail-row">
                 <span>Nodes</span>
-                <strong>{metrics.total}</strong>
+
+                <strong>
+                  {metrics.total}
+                </strong>
               </div>
-              {Object.entries(metrics.clusters).map(([cluster, count]) => (
-                <div className="detail-row" key={cluster}>
+
+              {Object.entries(
+                metrics.clusters
+              ).map(([cluster, count]) => (
+                <div
+                  className="detail-row"
+                  key={cluster}
+                >
                   <span>{cluster}</span>
+
                   <strong>{count}</strong>
                 </div>
               ))}
@@ -959,24 +1587,50 @@ function VectorModal({ open, onClose, execution }) {
 
             <div className="sidebar-card">
               <h4>Selected Node</h4>
+
               {selected ? (
                 <>
                   <div className="detail-row">
                     <span>ID</span>
-                    <strong>{selected.id}</strong>
+
+                    <strong>
+                      {selected.id}
+                    </strong>
                   </div>
+
                   <div className="detail-row">
                     <span>Type</span>
-                    <strong>{selected.query ? 'Runtime Error' : selected.cluster}</strong>
+
+                    <strong>
+                      {selected.query
+                        ? 'Runtime Error'
+                        : selected.cluster}
+                    </strong>
                   </div>
+
                   <div className="detail-row">
                     <span>Label</span>
-                    <strong>{selected.label}</strong>
+
+                    <strong>
+                      {selected.label}
+                    </strong>
                   </div>
-                  <pre>{JSON.stringify(selected.metadata || {}, null, 2)}</pre>
+
+                  <pre>
+                    {JSON.stringify(
+                      selected.metadata ||
+                        {},
+                      null,
+                      2
+                    )}
+                  </pre>
                 </>
               ) : (
-                <p className="muted-copy">Click a node to inspect traceback and semantic metadata.</p>
+                <p className="muted-copy">
+                  Click a node to inspect
+                  traceback and semantic
+                  metadata.
+                </p>
               )}
             </div>
           </aside>
@@ -987,4 +1641,3 @@ function VectorModal({ open, onClose, execution }) {
 }
 
 export default App;
-
