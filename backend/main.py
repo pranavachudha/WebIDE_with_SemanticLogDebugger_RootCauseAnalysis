@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from embeddings.generator import generate_embedding
 from ingestion.bugsinpy import ingest_bugsinpy_dataset, ingest_mock_data
+from llm.feedback_model import generate_developer_feedback
 from parser.traceback_parser import build_embedding_document, extract_code_context, parse_traceback
 from runtime.executor import execute_code, stop_execution
 from rca.engine import analyze_error
@@ -64,6 +65,12 @@ async def execute(request: ExecuteRequest):
         similar_bugs = get_similar_bugs(exception_type, traceback_str, semantic_document, top_k=5)
 
         rca_summary = analyze_error(exception_type, message, traceback_str, similar_bugs)
+        llm_feedback = generate_developer_feedback(
+            error=result["error"],
+            rca=rca_summary,
+            similar_bugs=similar_bugs,
+            source_code=request.code,
+        )
 
         return {
             "success": False,
@@ -76,6 +83,7 @@ async def execute(request: ExecuteRequest):
             "query_embedding": query_embedding,
             "root_cause_analysis": rca_summary["summary"],
             "suggested_fix": rca_summary["suggested_fix"],
+            "llm_feedback": llm_feedback,
             "similarity_scores": [match["score"] for match in similar_bugs],
             "rca": rca_summary,
             "execution_time": result.get("execution_time", ""),
@@ -144,7 +152,22 @@ async def rca(request: RCARequest):
         request.code,
     )
     matches = get_similar_bugs(request.exception_type, request.traceback, semantic_document)
-    return {"rca": analyze_error(request.exception_type, request.message, request.traceback, matches), "semantic_matches": matches}
+    rca_result = analyze_error(request.exception_type, request.message, request.traceback, matches)
+    llm_feedback = generate_developer_feedback(
+        error={
+            "type": request.exception_type,
+            "message": request.message,
+            "traceback": request.traceback,
+            "line_number": line_number,
+            "failing_function": parsed.get("failing_function", ""),
+            "code_context": code_context,
+            "call_stack": parsed.get("call_stack", []),
+        },
+        rca=rca_result,
+        similar_bugs=matches,
+        source_code=request.code,
+    )
+    return {"rca": rca_result, "llm_feedback": llm_feedback, "semantic_matches": matches}
 
 @app.post("/ingest-bugsinpy")
 async def ingest_bugsinpy(request: IngestRequest):

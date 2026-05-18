@@ -43,6 +43,46 @@ export interface EmbeddingsResponse {
   records: EmbeddingRecord[];
 }
 
+export interface FeedbackCodeAction {
+  title: string;
+  reason: string;
+  before?: string;
+  after?: string;
+}
+
+export interface FeedbackPattern {
+  bug_id: string;
+  project?: string;
+  score: number;
+  lesson: string;
+  file_path?: string;
+}
+
+export interface DeveloperFeedback {
+  model_name: string;
+  model_version: string;
+  mode: string;
+  headline: string;
+  diagnosis: string;
+  root_cause: string;
+  primary_fix: string;
+  severity: string;
+  confidence: number;
+  location?: {
+    file?: string;
+    line_number?: number;
+    function?: string;
+  };
+  evidence: string[];
+  fix_steps: string[];
+  code_actions: FeedbackCodeAction[];
+  historical_patterns: FeedbackPattern[];
+  prevention: string[];
+  validation_checks: string[];
+  debug_questions: string[];
+  learning_note: string;
+}
+
 export interface ExecutionResult {
   success: boolean;
   stdout: string;
@@ -53,6 +93,7 @@ export interface ExecutionResult {
   query_embedding?: number[];
   root_cause_analysis?: string;
   suggested_fix?: string;
+  llm_feedback?: DeveloperFeedback;
   similarity_scores?: number[];
   rca?: unknown;
   filename?: string;

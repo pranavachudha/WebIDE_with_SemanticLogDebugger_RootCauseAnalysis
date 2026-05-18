@@ -15,6 +15,50 @@ const Score = ({ value }) => (
   <span className="score">{Math.max(0, Math.min(1, value || 0)).toFixed(2)}</span>
 );
 
+const FeedbackList = ({ items = [], ordered = false }) => {
+  if (!items.length) return null;
+  const Tag = ordered ? 'ol' : 'ul';
+  return (
+    <Tag className="feedback-list">
+      {items.map((item, index) => (
+        <li key={`${item}-${index}`}>{item}</li>
+      ))}
+    </Tag>
+  );
+};
+
+const CodeActions = ({ actions = [] }) => {
+  if (!actions.length) return null;
+  return (
+    <div className="code-action-list">
+      {actions.map((action, index) => (
+        <article className="code-action" key={`${action.title}-${index}`}>
+          <header>
+            <strong>{action.title}</strong>
+            <span>{action.reason}</span>
+          </header>
+          {(action.before || action.after) && (
+            <div className="code-action-grid">
+              {action.before && (
+                <div>
+                  <small>Current pattern</small>
+                  <pre>{action.before}</pre>
+                </div>
+              )}
+              {action.after && (
+                <div>
+                  <small>Safer pattern</small>
+                  <pre>{action.after}</pre>
+                </div>
+              )}
+            </div>
+          )}
+        </article>
+      ))}
+    </div>
+  );
+};
+
 function RCAPanel({ execution, activeTab, onTabChange }) {
   if (!execution) return <EmptyState />;
 
@@ -32,6 +76,7 @@ function RCAPanel({ execution, activeTab, onTabChange }) {
     query_embedding = [],
     root_cause_analysis: rca,
     suggested_fix: fix,
+    llm_feedback: feedback,
     filename,
     execution_time,
   } = execution;
@@ -413,29 +458,108 @@ function RCAPanel({ execution, activeTab, onTabChange }) {
     );
   }
 
+  const confidence = Math.round((feedback?.confidence || 0) * 100);
+  const hasDetailedFeedback = Boolean(feedback);
+
   return (
     <div className="debug-content">
-      <div className="rca-summary-card">
+      <div className="feedback-hero">
         <div>
-          <h3>Root Cause Analysis</h3>
-          <p>{rca || 'No root cause summary available yet.'}</p>
+          <h3>{feedback?.headline || 'Root Cause Analysis'}</h3>
+          <p>{feedback?.diagnosis || rca || 'No root cause summary available yet.'}</p>
         </div>
-        <div>
-          <span className="chip">{error.type}</span>
-          <span className="chip">Line {error.line_number}</span>
-        </div>
+        {hasDetailedFeedback && (
+          <div className="feedback-chips">
+            <span className="chip">{confidence}% confidence</span>
+          </div>
+        )}
       </div>
-      <div className="row-cards">
-        <div className="info-card">
-          <h4>Error details</h4>
-          <p>{error.message}</p>
-          <small>{error.file_name}</small>
+
+      {hasDetailedFeedback ? (
+        <>
+          <div className="feedback-grid">
+            <section className="feedback-section">
+              <h4>Most likely root cause</h4>
+              <p>{feedback.root_cause}</p>
+            </section>
+            <section className="feedback-section">
+              <h4>Primary repair</h4>
+              <p>{feedback.primary_fix || fix}</p>
+            </section>
+          </div>
+
+          {feedback.evidence?.length > 0 && (
+            <section className="feedback-section">
+              <h4>Evidence used by the local model</h4>
+              <FeedbackList items={feedback.evidence} />
+            </section>
+          )}
+
+          {feedback.fix_steps?.length > 0 && (
+            <section className="feedback-section">
+              <h4>Fix plan</h4>
+              <FeedbackList items={feedback.fix_steps} ordered />
+            </section>
+          )}
+
+          <CodeActions actions={feedback.code_actions} />
+
+          {feedback.historical_patterns?.length > 0 && (
+            <section className="feedback-section">
+              <h4>Historical bug patterns</h4>
+              <div className="pattern-list">
+                {feedback.historical_patterns.map((pattern) => (
+                  <article className="pattern-row" key={pattern.bug_id}>
+                    <div>
+                      <strong>{pattern.project || 'BugsInPy'} / {pattern.bug_id}</strong>
+                      <p>{pattern.lesson || 'Related historical failure pattern.'}</p>
+                    </div>
+                    <Score value={pattern.score} />
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {(feedback.validation_checks?.length > 0 || feedback.prevention?.length > 0) && (
+            <div className="feedback-grid">
+              {feedback.validation_checks?.length > 0 && (
+                <section className="feedback-section">
+                  <h4>Validation checks</h4>
+                  <FeedbackList items={feedback.validation_checks} />
+                </section>
+              )}
+              {feedback.prevention?.length > 0 && (
+                <section className="feedback-section">
+                  <h4>Prevention</h4>
+                  <FeedbackList items={feedback.prevention} />
+                </section>
+              )}
+            </div>
+          )}
+
+          {(feedback.learning_note || feedback.debug_questions?.length > 0) && (
+            <section className="feedback-section learning-note">
+              <h4>Learning note</h4>
+              {feedback.learning_note && <p>{feedback.learning_note}</p>}
+              <FeedbackList items={feedback.debug_questions} />
+            </section>
+          )}
+        </>
+      ) : (
+        <div className="row-cards">
+          <div className="info-card">
+            <h4>Error details</h4>
+            <p>{error.message}</p>
+            <small>{error.file_name}</small>
+          </div>
+          <div className="info-card">
+            <h4>Suggested fix</h4>
+            <p>{fix || 'No fix suggestion available.'}</p>
+          </div>
         </div>
-        <div className="info-card">
-          <h4>Suggested fix</h4>
-          <p>{fix || 'No fix suggestion available.'}</p>
-        </div>
-      </div>
+      )}
+
       {renderRuntimeSummary()}
       <div className="insight-panel">
         <h4>Semantic Insight</h4>
