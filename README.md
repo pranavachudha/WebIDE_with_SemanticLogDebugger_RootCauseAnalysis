@@ -164,24 +164,32 @@ If frontend does not open on the expected port:
 
 ## Project Structure
 
-```text
+```
 backend/
-  main.py                    FastAPI app and API routes
-  llm/feedback_model.py      Ollama-powered developer feedback module
-  rca/engine.py              Root cause analysis synthesis
-  parser/traceback_parser.py Traceback and code-context extraction
-  runtime/executor.py        Python subprocess execution
-  vector_db/chroma_store.py  Local vector store and semantic search
-  ingestion/bugsinpy.py      BugsInPy ingestion utilities
+├── main.py                      # FastAPI app and API routes
+├── llm/
+│   └── feedback_model.py        # Ollama-powered developer feedback module
+├── rca/
+│   └── engine.py                # Root cause analysis synthesis
+├── parser/
+│   └── traceback_parser.py      # Traceback and code-context extraction
+├── runtime/
+│   └── executor.py              # Python subprocess execution
+├── vector_db/
+│   └── chroma_store.py          # Local vector store and semantic search
+└── ingestion/
+    └── bugsinpy.py              # BugsInPy ingestion utilities
 
 src/
-  App.jsx                    React IDE shell
-  components/RCAPanel.jsx    RCA/feedback UI panel
-  services/api.ts            Frontend API client/types
+├── App.jsx                      # React IDE shell
+├── components/
+│   └── RCAPanel.jsx             # RCA/feedback UI panel
+└── services/
+    └── api.ts                   # Frontend API client/types
 
-index.html                   Current inline IDE demo served by Vite
-package.json                 Frontend dependencies/scripts
-vite.config.js               Vite server config
+index.html                       # Inline IDE demo served by Vite
+package.json                     # Frontend dependencies/scripts
+vite.config.js                   # Vite server config
 ```
 
 ## Technologies Used
