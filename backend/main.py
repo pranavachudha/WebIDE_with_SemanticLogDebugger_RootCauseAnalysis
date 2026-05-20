@@ -8,6 +8,7 @@ from llm.feedback_model import generate_developer_feedback
 from parser.traceback_parser import build_embedding_document, extract_code_context, parse_traceback
 from runtime.executor import execute_code, stop_execution
 from rca.engine import analyze_error
+from sarvam_translate import translate_text
 from vector_db.chroma_store import add_bug_to_db, get_similar_bugs, traceback_collection
 
 app = FastAPI(title="Semantic AI Debugger API")
@@ -56,6 +57,10 @@ class FeedbackStreamRequest(BaseModel):
     similar_bugs: list | None = None
     source_code: str = ""
     model: str | None = None
+
+class TranslationRequest(BaseModel):
+    text: str
+    target_language_code: str
 
 
 @app.post("/execute")
@@ -157,6 +162,15 @@ async def semantic_search(request: SemanticSearchRequest):
 async def embedding(request: EmbeddingRequest):
     vector = generate_embedding(request.text)
     return {"dimension": len(vector), "embedding": vector}
+
+@app.post("/translate-feedback")
+async def translate_feedback(request: TranslationRequest):
+    try:
+        return translate_text(request.text, request.target_language_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 @app.get("/embeddings")
 async def embeddings():

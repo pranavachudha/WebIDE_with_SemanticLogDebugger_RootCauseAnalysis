@@ -100,6 +100,13 @@ export interface ExecutionResult {
   execution_time?: string;
 }
 
+export interface TranslationResponse {
+  translated_text: string;
+  source_language_code: string;
+  target_language_code: string;
+  request_id?: string | null;
+}
+
 export const getEmbeddings = async (): Promise<EmbeddingsResponse> => {
   try {
     const response = await fetch(`${API_URL}/embeddings`);
@@ -109,6 +116,29 @@ export const getEmbeddings = async (): Promise<EmbeddingsResponse> => {
     console.error('Failed to load embeddings:', error);
     return { records: [] };
   }
+};
+
+export const translateFeedback = async (
+  text: string,
+  targetLanguageCode: string
+): Promise<TranslationResponse> => {
+  const response = await fetch(`${API_URL}/translate-feedback`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text,
+      target_language_code: targetLanguageCode,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => null);
+    throw new Error(errorBody?.detail || `HTTP error! status: ${response.status}`);
+  }
+
+  return await response.json();
 };
 
 export const executeCode = async (filename: string, code: string): Promise<ExecutionResult> => {

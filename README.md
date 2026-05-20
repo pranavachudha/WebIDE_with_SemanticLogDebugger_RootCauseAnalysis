@@ -16,6 +16,7 @@ Install these before running the project:
 - Python 3.10+ recommended
 - Ollama
 - The Ollama model used by the backend: `qwen2.5-coder:1.5b`
+- Sarvam API key for translating RCA output into Indian languages
 
 ## First-Time Setup
 
@@ -95,6 +96,7 @@ http://localhost:3000
 4. If the code fails, the RCA panel appears.
 5. The backend parses the traceback, retrieves similar historical bugs, runs root cause analysis, and asks the local Ollama model for developer feedback.
 6. The panel shows the symptom, root cause, recommended fix, evidence, developer fix plan, prevention checks, and debugging questions.
+7. After the LLM output finishes, use `Translate Generated RCA`, select an Indian language, and click `CONVERT`.
 
 ## Backend Endpoints
 
@@ -103,6 +105,7 @@ http://localhost:3000
 - `GET /embeddings` - inspect stored vector records
 - `POST /ingest-bugsinpy` - ingest BugsInPy records into the vector store
 - `POST /generate-embedding` - generate an embedding for custom text
+- `POST /translate-feedback` - translate generated RCA feedback with Sarvam Translate
 
 ## Ollama Notes
 
@@ -134,6 +137,37 @@ ollama pull codellama:7b
 
 Larger models usually give better feedback, but need more RAM and take longer to respond.
 
+## Sarvam Translation
+
+The RCA panel can translate the generated English explanation into Indian languages through Sarvam Translate.
+
+Add your Sarvam API key in one of these ways:
+
+```text
+backend/sarvam_translate.py
+```
+
+Set:
+
+```python
+SARVAM_API_KEY = "your_key_here"
+```
+
+Or set an environment variable before starting the backend:
+
+```bash
+SARVAM_API_KEY=your_key_here
+```
+
+Important: restart the backend after adding or changing the key. The running FastAPI process only reads the key when it starts.
+
+The translation feature uses:
+
+- Backend endpoint: `POST /translate-feedback`
+- Frontend control: `Translate Generated RCA` in the RCA panel
+- Default source language: `en-IN`
+- Target languages include Hindi, Bengali, Gujarati, Kannada, Malayalam, Marathi, Odia, Punjabi, Tamil, Telugu, Urdu, and more.
+
 ## Troubleshooting
 
 If the RCA panel says the backend is unavailable:
@@ -141,6 +175,12 @@ If the RCA panel says the backend is unavailable:
 - Make sure Terminal 2 is running `python main.py` inside the `backend` folder.
 - Confirm the backend is reachable at `http://localhost:8000`.
 - Check that the frontend is using the same backend URL.
+
+If translation says the Sarvam API key is missing:
+
+- Confirm the key is set in `backend/sarvam_translate.py` or in the `SARVAM_API_KEY` environment variable.
+- Stop and restart the backend after setting the key.
+- Refresh the frontend with `Ctrl + F5`.
 
 If LLM feedback is weak or falls back:
 

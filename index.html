@@ -101,6 +101,11 @@
         .feedback-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.65rem; color: #e2e8f0; font-size: 0.84rem; line-height: 1.55; }
         .feedback-list li::marker { color: var(--success); }
         .code-suggestion { margin-top: 0.75rem; background: rgba(0,0,0,0.35); border: 1px solid rgba(147, 197, 253, 0.12); border-radius: 8px; padding: 0.85rem; color: #bfdbfe; font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; font-size: 0.78rem; line-height: 1.5; overflow: auto; }
+        .translate-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 0.85rem; }
+        .language-select { flex: 1; min-width: 150px; background: rgba(255,255,255,0.05); color: #e2e8f0; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 0.78rem; font-family: inherit; outline: none; cursor: pointer; }
+        .language-select option { background: #0a0a0c; color: #e2e8f0; }
+        .translated-output { margin-top: 0.85rem; background: rgba(0,0,0,0.35); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 0.85rem; color: #e2e8f0; white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; line-height: 1.6; font-family: inherit; }
+        .translation-error { margin-top: 0.75rem; color: #f87171; font-size: 0.78rem; line-height: 1.5; }
         
         /* GRAPH-BASED RCA STYLES */
         .graph-container { position: relative; padding: 10px 0 20px 30px; }
@@ -758,6 +763,45 @@
           { id: 'phi4-mini:latest', name: 'Phi-4 Mini 3.8B', description: 'Advanced instructions and code reasoning. Highly intelligent and resource-efficient.', size: '2.5 GB' }
         ];
 
+        const INDIAN_LANGUAGES = [
+          { code: 'hi-IN', name: 'Hindi' },
+          { code: 'bn-IN', name: 'Bengali' },
+          { code: 'gu-IN', name: 'Gujarati' },
+          { code: 'kn-IN', name: 'Kannada' },
+          { code: 'ml-IN', name: 'Malayalam' },
+          { code: 'mr-IN', name: 'Marathi' },
+          { code: 'od-IN', name: 'Odia' },
+          { code: 'pa-IN', name: 'Punjabi' },
+          { code: 'ta-IN', name: 'Tamil' },
+          { code: 'te-IN', name: 'Telugu' },
+          { code: 'as-IN', name: 'Assamese' },
+          { code: 'brx-IN', name: 'Bodo' },
+          { code: 'doi-IN', name: 'Dogri' },
+          { code: 'kok-IN', name: 'Konkani' },
+          { code: 'ks-IN', name: 'Kashmiri' },
+          { code: 'mai-IN', name: 'Maithili' },
+          { code: 'mni-IN', name: 'Manipuri' },
+          { code: 'ne-IN', name: 'Nepali' },
+          { code: 'sa-IN', name: 'Sanskrit' },
+          { code: 'sat-IN', name: 'Santali' },
+          { code: 'sd-IN', name: 'Sindhi' },
+          { code: 'ur-IN', name: 'Urdu' },
+        ];
+
+        const formatFeedbackForTranslation = (feedback, fallbackSummary = '') => {
+            if (!feedback) return fallbackSummary || '';
+            const parts = [
+                feedback.headline ? `Diagnosis: ${feedback.headline}` : '',
+                feedback.root_cause ? `Deep root cause: ${feedback.root_cause}` : '',
+                feedback.primary_fix ? `Primary fix: ${feedback.primary_fix}` : '',
+                Array.isArray(feedback.evidence) && feedback.evidence.length ? `Evidence:\n${feedback.evidence.map(item => `- ${item}`).join('\n')}` : '',
+                Array.isArray(feedback.fix_steps) && feedback.fix_steps.length ? `Fix plan:\n${feedback.fix_steps.map((item, idx) => `${idx + 1}. ${item}`).join('\n')}` : '',
+                Array.isArray(feedback.prevention) && feedback.prevention.length ? `Prevention:\n${feedback.prevention.map(item => `- ${item}`).join('\n')}` : '',
+                Array.isArray(feedback.debug_questions) && feedback.debug_questions.length ? `Debugging questions:\n${feedback.debug_questions.map(item => `- ${item}`).join('\n')}` : ''
+            ];
+            return parts.filter(Boolean).join('\n\n');
+        };
+
         function App() {
             const [selectedModel, setSelectedModel] = useState('qwen2.5-coder:1.5b');
             const [files, setFiles] = useState(loadFiles());
@@ -779,6 +823,10 @@
             const [termHeight, setTermHeight] = useState(250);
 
             const [rca, setRca] = useState(null);
+            const [selectedLanguage, setSelectedLanguage] = useState('hi-IN');
+            const [translatedRca, setTranslatedRca] = useState('');
+            const [translationError, setTranslationError] = useState('');
+            const [isTranslating, setIsTranslating] = useState(false);
             const [view, setView] = useState('editor');
             const [creatingItem, setCreatingItem] = useState(null);
             const [newItemName, setNewItemName] = useState('');
@@ -797,6 +845,44 @@
 
             const monacoRef = useRef(null);
             const editorInstance = useRef(null);
+
+            useEffect(() => {
+                setTranslatedRca('');
+                setTranslationError('');
+            }, [rca?.feedback, rca?.ins]);
+
+            const translateGeneratedRca = async (feedback, fallbackSummary = '') => {
+                const text = formatFeedbackForTranslation(feedback, fallbackSummary);
+                if (!text.trim()) {
+                    setTranslationError('No generated RCA text is available to translate yet.');
+                    return;
+                }
+
+                setIsTranslating(true);
+                setTranslationError('');
+
+                try {
+                    const response = await fetch('http://localhost:8000/translate-feedback', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            text,
+                            target_language_code: selectedLanguage
+                        })
+                    });
+
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        throw new Error(data.detail || `Translation failed: ${response.status}`);
+                    }
+
+                    setTranslatedRca(data.translated_text || '');
+                } catch (err) {
+                    setTranslationError(err.message || String(err));
+                } finally {
+                    setIsTranslating(false);
+                }
+            };
 
             useEffect(() => {
                 if (window.require && monacoRef.current && !editorInstance.current) {
@@ -1198,9 +1284,10 @@ except:
             useEffect(() => {
                 if ('serviceWorker' in navigator) {
                     navigator.serviceWorker.register('/sw.js').then(() => {
-                        if (navigator.serviceWorker.controller) {
+                        if (!workerRef.current) {
                             rebootWorker();
-                        } else {
+                        }
+                        if (!navigator.serviceWorker.controller) {
                             navigator.serviceWorker.addEventListener('controllerchange', () => {
                                 if (!workerRef.current) rebootWorker();
                             });
@@ -1624,6 +1711,33 @@ except:
                                                             <ul className="feedback-list">
                                                                 {activeFeedback.debug_questions.map((item, idx) => <li key={`q-${idx}`}>{item}</li>)}
                                                             </ul>
+                                                        </div>
+                                                    )}
+
+                                                    {!rca.llmLoading && (
+                                                        <div className="feedback-block" style={{borderColor: 'rgba(16, 185, 129, 0.25)'}}>
+                                                            <div className="feedback-block-title" style={{color: 'var(--success)'}}>Translate Generated RCA</div>
+                                                            <div className="translate-controls">
+                                                                <select
+                                                                    className="language-select"
+                                                                    value={selectedLanguage}
+                                                                    onChange={(e) => setSelectedLanguage(e.target.value)}
+                                                                    title="Select target language"
+                                                                >
+                                                                    {INDIAN_LANGUAGES.map(language => (
+                                                                        <option key={language.code} value={language.code}>{language.name}</option>
+                                                                    ))}
+                                                                </select>
+                                                                <button
+                                                                    className="btn btn-secondary"
+                                                                    onClick={() => translateGeneratedRca(activeFeedback, deterministicIns?.explanation || '')}
+                                                                    disabled={isTranslating}
+                                                                >
+                                                                    {isTranslating ? 'CONVERTING...' : 'CONVERT'}
+                                                                </button>
+                                                            </div>
+                                                            {translationError && <div className="translation-error">{translationError}</div>}
+                                                            {translatedRca && <pre className="translated-output">{translatedRca}</pre>}
                                                         </div>
                                                     )}
                                                 </>

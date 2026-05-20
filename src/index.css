@@ -765,6 +765,54 @@ pre, code { font-family: "JetBrains Mono", Consolas, monospace; }
 .feedback-list li::marker {
   color: var(--green);
 }
+.translation-section {
+  border-color: rgba(63, 185, 80, 0.28);
+}
+.translation-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.translation-toolbar h4 {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.translation-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.language-select {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #21262d;
+  color: var(--text);
+  padding: 6px 8px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+.translated-output {
+  margin: 12px 0 0;
+  padding: 12px;
+  border: 1px solid rgba(63, 185, 80, 0.24);
+  border-radius: 8px;
+  background: #090c10;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.55;
+  font-family: inherit;
+}
+.translation-error {
+  margin-top: 10px;
+  color: #ff7b72;
+}
 .code-action-list {
   display: grid;
   gap: 12px;

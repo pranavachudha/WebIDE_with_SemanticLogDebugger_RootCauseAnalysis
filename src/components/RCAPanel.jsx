@@ -1,7 +1,32 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { GitPullRequestArrow, Network, Sparkles } from 'lucide-react';
-import { getEmbeddings } from '../services/api';
+import { GitPullRequestArrow, Languages, Network, Sparkles } from 'lucide-react';
+import { getEmbeddings, translateFeedback } from '../services/api';
+
+const INDIAN_LANGUAGES = [
+  { code: 'hi-IN', name: 'Hindi' },
+  { code: 'bn-IN', name: 'Bengali' },
+  { code: 'gu-IN', name: 'Gujarati' },
+  { code: 'kn-IN', name: 'Kannada' },
+  { code: 'ml-IN', name: 'Malayalam' },
+  { code: 'mr-IN', name: 'Marathi' },
+  { code: 'od-IN', name: 'Odia' },
+  { code: 'pa-IN', name: 'Punjabi' },
+  { code: 'ta-IN', name: 'Tamil' },
+  { code: 'te-IN', name: 'Telugu' },
+  { code: 'as-IN', name: 'Assamese' },
+  { code: 'brx-IN', name: 'Bodo' },
+  { code: 'doi-IN', name: 'Dogri' },
+  { code: 'kok-IN', name: 'Konkani' },
+  { code: 'ks-IN', name: 'Kashmiri' },
+  { code: 'mai-IN', name: 'Maithili' },
+  { code: 'mni-IN', name: 'Manipuri' },
+  { code: 'ne-IN', name: 'Nepali' },
+  { code: 'sa-IN', name: 'Sanskrit' },
+  { code: 'sat-IN', name: 'Santali' },
+  { code: 'sd-IN', name: 'Sindhi' },
+  { code: 'ur-IN', name: 'Urdu' },
+];
 
 const EmptyState = () => (
   <div className="empty-debugger">
@@ -59,6 +84,27 @@ const CodeActions = ({ actions = [] }) => {
   );
 };
 
+const formatFeedbackForTranslation = ({ feedback, rca, fix }) => {
+  if (!feedback) {
+    return [
+      rca && `Root cause analysis: ${rca}`,
+      fix && `Suggested fix: ${fix}`,
+    ].filter(Boolean).join('\n\n');
+  }
+
+  const parts = [
+    feedback.headline && `Headline: ${feedback.headline}`,
+    feedback.diagnosis && `Diagnosis: ${feedback.diagnosis}`,
+    feedback.root_cause && `Most likely root cause: ${feedback.root_cause}`,
+    (feedback.primary_fix || fix) && `Primary repair: ${feedback.primary_fix || fix}`,
+    feedback.evidence?.length ? `Evidence:\n${feedback.evidence.map((item) => `- ${item}`).join('\n')}` : '',
+    feedback.fix_steps?.length ? `Fix plan:\n${feedback.fix_steps.map((item, index) => `${index + 1}. ${item}`).join('\n')}` : '',
+    feedback.learning_note && `Learning note: ${feedback.learning_note}`,
+  ];
+
+  return parts.filter(Boolean).join('\n\n');
+};
+
 function RCAPanel({ execution, activeTab, onTabChange, streamingFeedback, isStreaming }) {
   if (!execution) return <EmptyState />;
 
@@ -85,6 +131,10 @@ function RCAPanel({ execution, activeTab, onTabChange, streamingFeedback, isStre
   const [embeddingsError, setEmbeddingsError] = useState('');
   const [filterText, setFilterText] = useState('');
   const [selectedRecordId, setSelectedRecordId] = useState(null);
+  const [selectedLanguage, setSelectedLanguage] = useState('hi-IN');
+  const [translatedText, setTranslatedText] = useState('');
+  const [translationError, setTranslationError] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
 
   useEffect(() => {
     if (activeTab === 'rca' && isStreaming) {
@@ -94,6 +144,11 @@ function RCAPanel({ execution, activeTab, onTabChange, streamingFeedback, isStre
       }
     }
   }, [streamingFeedback, activeTab, isStreaming]);
+
+  useEffect(() => {
+    setTranslatedText('');
+    setTranslationError('');
+  }, [feedback, rca, fix]);
 
   const normalizeVector = (vector) => {
     const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -469,6 +524,26 @@ function RCAPanel({ execution, activeTab, onTabChange, streamingFeedback, isStre
 
   const confidence = Math.round((feedback?.confidence || 0) * 100);
   const hasDetailedFeedback = Boolean(feedback);
+  const translationSourceText = formatFeedbackForTranslation({ feedback, rca, fix });
+
+  const handleTranslate = async () => {
+    if (!translationSourceText.trim()) {
+      setTranslationError('No generated RCA text is available to translate yet.');
+      return;
+    }
+
+    setIsTranslating(true);
+    setTranslationError('');
+
+    try {
+      const result = await translateFeedback(translationSourceText, selectedLanguage);
+      setTranslatedText(result.translated_text || '');
+    } catch (err) {
+      setTranslationError(String(err.message || err));
+    } finally {
+      setIsTranslating(false);
+    }
+  };
 
   if (activeTab === 'rca' && (isStreaming || (!feedback && streamingFeedback))) {
     return (
@@ -604,6 +679,41 @@ function RCAPanel({ execution, activeTab, onTabChange, streamingFeedback, isStre
           </div>
         </div>
       )}
+
+      <section className="feedback-section translation-section">
+        <div className="translation-toolbar">
+          <div>
+            <h4>
+              <Languages size={14} /> Translate generated RCA
+            </h4>
+            <p className="muted-copy">Convert the English explanation into an Indian language using Sarvam.</p>
+          </div>
+          <div className="translation-actions">
+            <select
+              value={selectedLanguage}
+              onChange={(event) => setSelectedLanguage(event.target.value)}
+              className="language-select"
+              aria-label="Select target language"
+            >
+              {INDIAN_LANGUAGES.map((language) => (
+                <option key={language.code} value={language.code}>
+                  {language.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="secondary-button"
+              onClick={handleTranslate}
+              disabled={isTranslating || !translationSourceText.trim()}
+            >
+              <Languages size={14} />
+              {isTranslating ? 'Converting...' : 'Convert'}
+            </button>
+          </div>
+        </div>
+        {translationError && <p className="translation-error">{translationError}</p>}
+        {translatedText && <pre className="translated-output">{translatedText}</pre>}
+      </section>
 
       {renderRuntimeSummary()}
       <div className="insight-panel">
