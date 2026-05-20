@@ -176,27 +176,80 @@ def add_bug_to_db(
     )
 
 def get_similar_bugs(exception_type: str, traceback_str: str, code: str, top_k: int = 5):
-    """Retrieves similar bugs from the database based on the traceback and code."""
+    """Retrieves similar bugs from the database based on the traceback and code, filtered by exception_type."""
+    if not traceback_collection:
+        return []
+    
+    try:
+        data = traceback_collection.get_all()
+    except Exception:
+        return []
+    
+    ids = data.get("ids", [])
+    embeddings = data.get("embeddings", [])
+    metadatas = data.get("metadatas", [])
+    
+    if not ids or not embeddings:
+        return []
+    
+    # Filter by exception_type (case-insensitive)
+    filtered_ids = []
+    filtered_embeddings = []
+    filtered_metadatas = []
+    
+    for i in range(len(ids)):
+        meta = metadatas[i] or {}
+        # Safely parse stringified metadata values
+        bug_exc_type = meta.get("exception_type")
+        if isinstance(bug_exc_type, str) and bug_exc_type.startswith('"') and bug_exc_type.endswith('"'):
+            try:
+                bug_exc_type = json.loads(bug_exc_type)
+            except Exception:
+                pass
+        
+        if str(bug_exc_type).strip().lower() == str(exception_type).strip().lower():
+            filtered_ids.append(ids[i])
+            filtered_embeddings.append(embeddings[i])
+            filtered_metadatas.append(meta)
+            
+    # If no bugs match this exception type, return empty list
+    if not filtered_embeddings:
+        return []
+        
     query_text = f"{exception_type}\n{traceback_str}\n{code}"
     query_embedding = generate_embedding(query_text)
     
-    results = traceback_collection.query(
-        query_embeddings=[query_embedding],
-        n_results=top_k
-    )
+    q_emb = np.array(query_embedding)
+    db_emb = np.array(filtered_embeddings)
+    
+    q_norm = np.linalg.norm(q_emb)
+    db_norms = np.linalg.norm(db_emb, axis=1)
+    
+    similarities = (db_emb @ q_emb) / np.maximum(db_norms * q_norm, 1e-12)
+    
+    top_indices = np.argsort(similarities)[::-1][:top_k]
     
     similar_bugs = []
-    if results and results['ids'] and len(results['ids'][0]) > 0:
-        embeddings = results.get('embeddings', [[]])[0] if results.get('embeddings') else []
-        for i in range(len(results['ids'][0])):
-            dist = results['distances'][0][i]
-            if dist < 1.25: # Chroma cosine distance can exceed 1 for weak matches.
-                bug = {
-                    "bug_id": results['ids'][0][i],
-                    "score": 1.0 - dist,
-                    "metadata": results['metadatas'][0][i],
-                    "embedding": embeddings[i] if i < len(embeddings) else None,
-                }
-                similar_bugs.append(bug)
+    for idx in top_indices:
+        sim = float(similarities[idx])
+        # Allow positive cosine similarities
+        if sim >= 0.1:
+            meta = filtered_metadatas[idx]
+            parsed_meta = {}
+            for k, v in meta.items():
+                if isinstance(v, str) and (v.startswith('{') or v.startswith('[')):
+                    try:
+                        parsed_meta[k] = json.loads(v)
+                    except Exception:
+                        parsed_meta[k] = v
+                else:
+                    parsed_meta[k] = v
+                    
+            similar_bugs.append({
+                "bug_id": filtered_ids[idx],
+                "score": sim,
+                "metadata": parsed_meta,
+                "embedding": filtered_embeddings[idx],
+            })
             
     return similar_bugs

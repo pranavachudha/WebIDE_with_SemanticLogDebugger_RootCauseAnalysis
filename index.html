@@ -101,6 +101,8 @@
         .feedback-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.65rem; color: #e2e8f0; font-size: 0.84rem; line-height: 1.55; }
         .feedback-list li::marker { color: var(--success); }
         .code-suggestion { margin-top: 0.75rem; background: rgba(0,0,0,0.35); border: 1px solid rgba(147, 197, 253, 0.12); border-radius: 8px; padding: 0.85rem; color: #bfdbfe; font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; font-size: 0.78rem; line-height: 1.5; overflow: auto; }
+        .log-excerpt { margin: 0.75rem 0 0; background: rgba(0,0,0,0.35); border: 1px solid rgba(59, 130, 246, 0.18); border-radius: 8px; padding: 0.85rem; color: #bfdbfe; white-space: pre-wrap; word-break: break-word; font-size: 0.78rem; line-height: 1.55; max-height: 220px; overflow: auto; }
+        .log-upload-input { display: none; }
         .translate-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 0.85rem; }
         .language-select { flex: 1; min-width: 150px; background: rgba(255,255,255,0.05); color: #e2e8f0; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 0.78rem; font-family: inherit; outline: none; cursor: pointer; }
         .language-select option { background: #0a0a0c; color: #e2e8f0; }
@@ -819,6 +821,7 @@
             const isReplRef = useRef(true);
             const workerRef = useRef(null);
             const streamAbortControllerRef = useRef(null);
+            const logFileInputRef = useRef(null);
             
             const [termHeight, setTermHeight] = useState(250);
 
@@ -1017,6 +1020,198 @@ except:
                 a.download = "pyglide_workspace.zip";
                 a.click();
                 URL.revokeObjectURL(url);
+            };
+
+            const handleLogFileUpload = async (event) => {
+                const file = event.target.files && event.target.files[0];
+                event.target.value = '';
+                if (!file) return;
+
+                const logText = await file.text();
+                if (!logText.trim()) {
+                    setRca({
+                        sourceType: 'log',
+                        logFilename: file.name,
+                        logExcerpt: '',
+                        frames: [{ line: 1, func: 'log', code: 'The uploaded log file is empty.' }],
+                        rc: 0,
+                        rawMsg: '',
+                        feedback: null,
+                        llmLoading: false,
+                        mlError: 'The uploaded log file is empty.',
+                        streamText: '',
+                        ins: {
+                            title: 'Log Debugger',
+                            symptom: 'No log content was available to inspect.',
+                            cause: 'The selected file did not contain readable text.',
+                            resolution: 'Upload a .log, .txt, .out, .err, or .trace file that contains error output.'
+                        }
+                    });
+                    return;
+                }
+
+                if (streamAbortControllerRef.current) {
+                    try {
+                        streamAbortControllerRef.current.abort();
+                    } catch (e) {}
+                }
+
+                const controller = new AbortController();
+                streamAbortControllerRef.current = controller;
+                setView('editor');
+                setTranslatedRca('');
+                setTranslationError('');
+                setRca({
+                    sourceType: 'log',
+                    logFilename: file.name,
+                    logExcerpt: logText.slice(0, 1600),
+                    frames: [{ line: 1, func: 'log', code: 'Scanning uploaded log for traceback and error signatures...' }],
+                    rc: 0,
+                    rawMsg: logText,
+                    feedback: null,
+                    llmLoading: true,
+                    mlError: null,
+                    streamText: '',
+                    ins: {
+                        title: 'Log Debugger',
+                        symptom: 'Uploaded log is being scanned for the strongest failure signal.',
+                        cause: 'The backend is extracting traceback blocks, severity markers, and exception signatures.',
+                        resolution: 'The selected local Ollama model will explain the root cause after parsing finishes.'
+                    }
+                });
+
+                try {
+                    const analysisResponse = await fetch('http://localhost:8000/log-debug', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        signal: controller.signal,
+                        body: JSON.stringify({
+                            filename: file.name,
+                            log_text: logText,
+                            top_k: 5
+                        })
+                    });
+
+                    const analysis = await analysisResponse.json().catch(() => ({}));
+                    if (!analysisResponse.ok) {
+                        throw new Error(analysis.detail || `Log analysis failed: ${analysisResponse.status}`);
+                    }
+
+                    const errorDetails = analysis.error || {};
+                    const stackFrames = Array.isArray(errorDetails.call_stack) && errorDetails.call_stack.length
+                        ? errorDetails.call_stack.map((frame) => ({
+                            line: frame.line_number || errorDetails.log_line_number || 1,
+                            func: frame.function || errorDetails.failing_function || 'log',
+                            code: frame.file || file.name
+                        }))
+                        : [{
+                            line: errorDetails.log_line_number || errorDetails.line_number || 1,
+                            func: errorDetails.failing_function || 'log',
+                            code: (errorDetails.message || analysis.log_excerpt || 'Log failure signal').slice(0, 220)
+                        }];
+
+                    setRca((prev) => ({
+                        ...(prev || {}),
+                        sourceType: 'log',
+                        logFilename: file.name,
+                        logExcerpt: analysis.log_excerpt || logText.slice(0, 1600),
+                        frames: stackFrames,
+                        rc: Math.max(0, stackFrames.length - 1),
+                        rawMsg: errorDetails.traceback || logText,
+                        parsedError: errorDetails,
+                        semanticMatches: analysis.semantic_matches || [],
+                        ins: {
+                            title: errorDetails.type || 'Log Failure',
+                            symptom: `Detected ${errorDetails.type || 'a log failure'}${errorDetails.message ? `: ${errorDetails.message}` : ''}`,
+                            cause: analysis.root_cause_analysis || 'The log parser found an error signal but needs LLM reasoning for deeper context.',
+                            resolution: analysis.suggested_fix || 'Review the highlighted log context and verify the failing service/component.'
+                        }
+                    }));
+
+                    const streamResponse = await fetch('http://localhost:8000/stream-feedback', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        signal: controller.signal,
+                        body: JSON.stringify({
+                            error: errorDetails,
+                            rca: analysis.rca,
+                            similar_bugs: analysis.semantic_matches || [],
+                            source_code: logText,
+                            model: selectedModel
+                        })
+                    });
+
+                    if (!streamResponse.ok) throw new Error(`Stream connection failed: ${streamResponse.status}`);
+                    if (!streamResponse.body) throw new Error('ReadableStream not supported');
+
+                    const reader = streamResponse.body.getReader();
+                    const decoder = new TextDecoder();
+                    let accumulatedText = '';
+
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+
+                        const chunk = decoder.decode(value, { stream: true });
+                        accumulatedText += chunk;
+
+                        if (accumulatedText.includes('[METADATA_SEPARATOR]')) {
+                            const parts = accumulatedText.split('[METADATA_SEPARATOR]');
+                            const streamingText = parts[0];
+                            const jsonText = parts[1];
+                            let finalFeedback = parsePartialJSON(streamingText);
+
+                            if (jsonText.trim()) {
+                                try {
+                                    const parsed = JSON.parse(jsonText.trim());
+                                    const ensureArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+                                    const codeActs = ensureArray(parsed.code_actions);
+                                    const action = codeActs.find(item => item && item.after) || codeActs[0] || null;
+                                    const codeSuggestion = action
+                                        ? [
+                                            action.before ? `Current:\n${action.before}` : '',
+                                            action.after ? `\nLearned repair pattern:\n${action.after}` : ''
+                                          ].filter(Boolean).join('\n')
+                                        : '';
+
+                                    finalFeedback = {
+                                        headline: finalFeedback.headline || parsed.headline || '',
+                                        root_cause: finalFeedback.root_cause || parsed.root_cause || '',
+                                        primary_fix: finalFeedback.primary_fix || parsed.primary_fix || '',
+                                        confidence: parsed.confidence || 0,
+                                        evidence: ensureArray(finalFeedback.evidence?.length ? finalFeedback.evidence : parsed.evidence),
+                                        fix_steps: ensureArray(finalFeedback.fix_steps?.length ? finalFeedback.fix_steps : parsed.fix_steps),
+                                        prevention: ensureArray(finalFeedback.prevention?.length ? finalFeedback.prevention : parsed.prevention),
+                                        debug_questions: ensureArray(finalFeedback.debug_questions?.length ? finalFeedback.debug_questions : parsed.debug_questions),
+                                        code_actions: codeActs,
+                                        codeSuggestion
+                                    };
+                                } catch (e) {}
+                            }
+
+                            setRca(p => p ? {
+                                ...p,
+                                streamText: streamingText,
+                                feedback: finalFeedback
+                            } : p);
+                        } else {
+                            setRca(p => p ? { ...p, streamText: accumulatedText } : p);
+                        }
+                    }
+                } catch (err) {
+                    if (err.name === 'AbortError') return;
+                    setRca(p => p ? {
+                        ...p,
+                        llmLoading: false,
+                        mlError: `Log debugger unavailable: ${err.message || String(err)}`
+                    } : p);
+                } finally {
+                    setRca(p => {
+                        if (!p) return p;
+                        const finalFb = p.feedback || parsePartialJSON(p.streamText);
+                        return { ...p, feedback: finalFb, llmLoading: false };
+                    });
+                }
             };
 
             // Initialize Xterm.js
@@ -1544,6 +1739,13 @@ except:
 
             return (
                 <div className="layout">
+                    <input
+                        ref={logFileInputRef}
+                        className="log-upload-input"
+                        type="file"
+                        accept=".log,.txt,.out,.err,.trace"
+                        onChange={handleLogFileUpload}
+                    />
                     {view === 'stats' && <AnalyticsPanel onBack={()=>setView('editor')} />}
                     {view === 'benchmarks' && <BenchmarksPanel onBack={()=>setView('editor')} />}
                     <aside className="sidebar">
@@ -1558,6 +1760,15 @@ except:
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
                                 MODEL BENCHMARKS
                             </button>
+                            <div style={{display:'flex', flexDirection:'column', gap:'4px', width:'100%'}}>
+                                <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>logFileInputRef.current?.click()} title="Upload a log file for root cause analysis (accepts .log, .txt, .out, .err, .trace)">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
+                                    LOG DEBUGGER
+                                </button>
+                                <span style={{fontSize:'0.6rem', color:'var(--text-dim)', paddingLeft:'28px', opacity:0.75, fontStyle:'italic'}}>
+                                    Accepts: .log, .txt, .out, .err, .trace
+                                </span>
+                            </div>
                         </div>
 
                         <div 
@@ -1628,19 +1839,21 @@ except:
                             {rca && (() => {
                                 const parsedStream = rca.llmLoading ? parsePartialJSON(rca.streamText) : {};
                                 const activeFeedback = rca.llmLoading ? parsedStream : (rca.feedback || {});
+                                const isLogDebug = rca.sourceType === 'log';
+                                const traceFrames = Array.isArray(rca.frames) ? rca.frames : [];
                                 
                                 const deterministicIns = rca.ins;
 
                                 return (
                                     <div className="rca-panel">
                                         <div className="rca-header">
-                                            <div className="rca-title">ROOT CAUSE ANALYSIS</div>
+                                            <div className="rca-title">{isLogDebug ? 'LOG ROOT CAUSE ANALYSIS' : 'ROOT CAUSE ANALYSIS'}</div>
                                             <button onClick={()=>setRca(null)} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontWeight:700, fontSize:'0.75rem', transition:'color 0.2s'}} onMouseOver={e=>e.target.style.color='#fff'} onMouseOut={e=>e.target.style.color='var(--text-dim)'}>DISMISS</button>
                                         </div>
 
                                         <div className="diagnostic-card" style={{border: '1px solid rgba(168, 85, 247, 0.2)', background: 'rgba(168, 85, 247, 0.05)'}}>
                                             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.25rem'}}>
-                                                <div style={{fontSize:'0.65rem', fontWeight:800, color:'#a855f7', letterSpacing:'0.1em'}}>SEMANTIC LLM ANALYSIS</div>
+                                                <div style={{fontSize:'0.65rem', fontWeight:800, color:'#a855f7', letterSpacing:'0.1em'}}>{isLogDebug ? 'LOG LLM ANALYSIS' : 'SEMANTIC LLM ANALYSIS'}</div>
                                                 {rca.llmLoading 
                                                     ? <div style={{fontSize:'0.65rem', color:'var(--text-dim)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
                                                         <div style={{width:6, height:6, borderRadius:'50%', background:'#a855f7', animation:'pulse 1s infinite'}}></div> STREAMING...
@@ -1650,6 +1863,14 @@ except:
                                                       </div>
                                                 }
                                             </div>
+
+                                            {isLogDebug && (
+                                                <div className="feedback-block" style={{borderColor: 'rgba(250, 204, 21, 0.22)'}}>
+                                                    <div className="feedback-block-title" style={{color: '#facc15'}}>Uploaded Log</div>
+                                                    <div className="diagnostic-text">{rca.logFilename || 'uploaded.log'}</div>
+                                                    {rca.logExcerpt && <pre className="log-excerpt">{rca.logExcerpt}</pre>}
+                                                </div>
+                                            )}
 
                                             {activeFeedback && (
                                                 <>
@@ -1754,11 +1975,16 @@ except:
                                         </div>
 
                                         <div>
-                                            <div className="rca-title" style={{marginBottom: '2rem'}}>TECHNICAL EXECUTION TRACE</div>
+                                            <div className="rca-title" style={{marginBottom: '2rem'}}>{isLogDebug ? 'LOG FAILURE TRACE' : 'TECHNICAL EXECUTION TRACE'}</div>
                                             <div className="graph-container">
-                                                {rca.frames.map((f, i) => {
+                                                {traceFrames.length === 0 && (
+                                                    <div className="graph-node">
+                                                        <div style={{fontSize:'13px', fontWeight:700, color:'#f8fafc'}}>No structured trace frames detected</div>
+                                                    </div>
+                                                )}
+                                                {traceFrames.map((f, i) => {
                                                     const isRoot = i === rca.rc;
-                                                    const isException = i === rca.frames.length - 1;
+                                                    const isException = i === traceFrames.length - 1;
                                                     const isBoth = isRoot && isException;
                                                     return (
                                                         <div key={i} className={`graph-node ${isRoot ? 'root' : ''} ${isException ? 'exception' : ''}`}>
@@ -1778,8 +2004,8 @@ except:
                                                                 </div>
                                                             )}
                                                             <div style={{fontSize:'13px', fontWeight:700, color:'#f8fafc', marginBottom:'10px'}}>{f.func}() <span style={{fontWeight:500, color:'var(--text-dim)'}}>at Line {f.line}</span></div>
-                                                            <div style={{fontSize:'12px', color:'#93c5fd', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,0,0,0.4)', padding:'10px', borderRadius:'8px', border:'1px solid rgba(147, 197, 253, 0.1)'}}>{f.code.trim()}</div>
-                                                            {i < rca.frames.length - 1 && (
+                                                            <div style={{fontSize:'12px', color:'#93c5fd', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,0,0,0.4)', padding:'10px', borderRadius:'8px', border:'1px solid rgba(147, 197, 253, 0.1)'}}>{String(f.code || '').trim()}</div>
+                                                            {i < traceFrames.length - 1 && (
                                                                 <div className="graph-edge">
                                                                     <div className="graph-arrow"></div>
                                                                 </div>

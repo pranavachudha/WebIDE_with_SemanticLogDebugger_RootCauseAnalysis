@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from embeddings.generator import generate_embedding
 from ingestion.bugsinpy import ingest_bugsinpy_dataset, ingest_mock_data
 from llm.feedback_model import generate_developer_feedback
+from parser.log_parser import parse_log_failure
 from parser.traceback_parser import build_embedding_document, extract_code_context, parse_traceback
 from runtime.executor import execute_code, stop_execution
 from rca.engine import analyze_error
@@ -57,6 +58,11 @@ class FeedbackStreamRequest(BaseModel):
     similar_bugs: list | None = None
     source_code: str = ""
     model: str | None = None
+
+class LogDebugRequest(BaseModel):
+    filename: str = "uploaded.log"
+    log_text: str
+    top_k: int = 5
 
 class TranslationRequest(BaseModel):
     text: str
@@ -114,28 +120,47 @@ async def stream_feedback(request: FeedbackStreamRequest):
 
     similar_bugs = request.similar_bugs
     if similar_bugs is None:
-        try:
-            from services.search_service import get_similar_bugs
-            from services.code_parser import parse_traceback
-            tb = request.error.get("traceback", "")
-            exc_type = request.error.get("type", "")
-            exc_msg = request.error.get("message", "")
-            parsed = parse_traceback(tb)
-            line_number = parsed.get("line_number", -1)
-            code_context = ""
-            if line_number != -1 and request.source_code:
-                code_lines = request.source_code.split("\n")
-                if 0 < line_number <= len(code_lines):
-                    code_context = code_lines[line_number - 1].strip()
-            semantic_document = f"{exc_type} {exc_msg} {parsed.get('failing_function', '')} {code_context}"
-            similar_bugs = get_similar_bugs(exc_type, tb, semantic_document)
-        except Exception:
-            similar_bugs = []
+        tb = request.error.get("traceback", "")
+        exc_type = request.error.get("type", "")
+        parsed = parse_traceback(tb)
+        line_number = request.error.get("line_number") or parsed.get("line_number", -1)
+        code_context = request.error.get("code_context") or {}
+        if not code_context:
+            if request.error.get("source_type") == "log":
+                code_context = {
+                    "imports": [],
+                    "surrounding_code": request.source_code[:4000],
+                    "failing_function": request.error.get("failing_function", "log"),
+                    "class_context": "",
+                    "ast_summary": ["LogFile"],
+                }
+            else:
+                code_context = extract_code_context(request.source_code, line_number)
+        semantic_document = build_embedding_document(
+            {
+                "type": exc_type,
+                "message": request.error.get("message", ""),
+                "traceback": tb,
+                "failing_function": request.error.get("failing_function") or parsed.get("failing_function", ""),
+            },
+            code_context,
+            request.source_code,
+        )
+        similar_bugs = get_similar_bugs(exc_type, tb, semantic_document)
+
+    rca_payload = request.rca
+    if rca_payload is None:
+        rca_payload = analyze_error(
+            request.error.get("type", "UnknownError"),
+            request.error.get("message", ""),
+            request.error.get("traceback", ""),
+            similar_bugs or [],
+        )
 
     return StreamingResponse(
         stream_developer_feedback_generator(
             error=request.error,
-            rca=request.rca,
+            rca=rca_payload,
             similar_bugs=similar_bugs,
             source_code=request.source_code,
             model_name=request.model,
@@ -171,6 +196,51 @@ async def translate_feedback(request: TranslationRequest):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+@app.post("/log-debug")
+async def log_debug(request: LogDebugRequest):
+    if not request.log_text.strip():
+        raise HTTPException(status_code=400, detail="Uploaded log file is empty.")
+
+    error_details = parse_log_failure(request.log_text, request.filename)
+    code_context = error_details.get("code_context", {})
+    semantic_document = build_embedding_document(
+        {
+            "type": error_details.get("type", "UnknownError"),
+            "message": error_details.get("message", ""),
+            "traceback": error_details.get("traceback", ""),
+            "failing_function": error_details.get("failing_function", "log"),
+        },
+        code_context,
+        request.log_text,
+    )
+    query_embedding = generate_embedding(semantic_document)
+    matches = get_similar_bugs(
+        error_details.get("type", "UnknownError"),
+        error_details.get("traceback", ""),
+        semantic_document,
+        top_k=request.top_k,
+    )
+    rca_result = analyze_error(
+        error_details.get("type", "UnknownError"),
+        error_details.get("message", ""),
+        error_details.get("traceback", ""),
+        matches,
+    )
+
+    return {
+        "success": True,
+        "analysis_type": "log",
+        "filename": request.filename,
+        "error": error_details,
+        "log_excerpt": code_context.get("surrounding_code", ""),
+        "semantic_matches": matches,
+        "query_embedding": query_embedding,
+        "root_cause_analysis": rca_result["summary"],
+        "suggested_fix": rca_result["suggested_fix"],
+        "similarity_scores": [match["score"] for match in matches],
+        "rca": rca_result,
+    }
 
 @app.get("/embeddings")
 async def embeddings():

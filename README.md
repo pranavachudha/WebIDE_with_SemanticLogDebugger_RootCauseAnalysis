@@ -101,10 +101,22 @@ http://localhost:3000
 7. After the LLM output finishes, use `Translate Generated RCA`, select an Indian language, and click `CONVERT`.
 8. You can change the AI model used for explanations at any time via the **Settings** panel in the IDE.
 
+## Log Debugger
+
+The IDE also supports log-based debugging.
+
+1. Select the local Ollama model from the model dropdown.
+2. Click `LOG DEBUGGER` in the left sidebar.
+3. Upload a `.log`, `.txt`, `.out`, `.err`, or `.trace` file.
+4. The backend extracts the strongest traceback/error signal, runs semantic retrieval and RCA, then streams feedback from the selected Ollama model.
+5. The same RCA panel shows the log excerpt, root cause, fix plan, evidence, prevention checks, debugging questions, and translation controls.
+
 ## Backend Endpoints
 
 - `POST /execute` - run Python code and return execution output, RCA, semantic matches, and LLM feedback
 - `POST /rca` - generate RCA and LLM feedback from a supplied traceback/code payload
+- `POST /log-debug` - extract error context from uploaded logs and return RCA-ready details
+- `POST /stream-feedback` - stream local Ollama feedback for code errors or log errors
 - `GET /embeddings` - inspect stored vector records
 - `POST /ingest-bugsinpy` - ingest BugsInPy records into the vector store
 - `POST /generate-embedding` - generate an embedding for custom text
@@ -207,7 +219,8 @@ backend/
 ├── rca/
 │   └── engine.py                # Root cause analysis synthesis
 ├── parser/
-│   └── traceback_parser.py      # Traceback and code-context extraction
+│   ├── traceback_parser.py      # Traceback and code-context extraction
+│   └── log_parser.py            # Uploaded log error extraction
 ├── runtime/
 │   └── executor.py              # Python subprocess execution
 ├── vector_db/

@@ -88,10 +88,10 @@ def _build_prompt(
 
     system = (
         "You are a senior software debugging assistant integrated into an IDE. "
-        "A developer just ran their Python code and hit an error. You have been "
+        "A developer just ran Python code or uploaded an application log and hit an error. You have been "
         "given the error details, a root-cause analysis from an automated RCA "
-        "engine, similar historical bug-fix records, and the developer's source "
-        "code. Your job is to produce a thorough, actionable debugging report.\n\n"
+        "engine, similar historical bug-fix records, and the available code/log "
+        "context. Your job is to produce a thorough, actionable debugging report.\n\n"
         "RULES:\n"
         "1. Focus on the ROOT CAUSE — not just what the error says, but WHY it happened.\n"
         "2. Provide concrete, specific fix suggestions referencing the actual code.\n"
@@ -132,7 +132,7 @@ def _build_prompt(
         code_section += f"SURROUNDING CODE:\n{code_context['surrounding_code']}\n"
     if code_context.get("imports"):
         code_section += f"IMPORTS: {', '.join(code_context['imports'])}\n"
-    if source_code:
+    if source_code and error.get("source_type") != "log":
         # send first 1500 chars to stay within context window
         code_section += f"\nFULL SOURCE CODE (truncated):\n{source_code[:1500]}\n"
 
