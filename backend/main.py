@@ -50,6 +50,14 @@ class IngestRequest(BaseModel):
     limit: int | None = 150
     run_tests: bool = False
 
+class FeedbackStreamRequest(BaseModel):
+    error: dict
+    rca: dict | None = None
+    similar_bugs: list | None = None
+    source_code: str = ""
+    model: str | None = None
+
+
 @app.post("/execute")
 async def execute(request: ExecuteRequest):
     result = execute_code(request.code, request.filename)
@@ -65,12 +73,6 @@ async def execute(request: ExecuteRequest):
         similar_bugs = get_similar_bugs(exception_type, traceback_str, semantic_document, top_k=5)
 
         rca_summary = analyze_error(exception_type, message, traceback_str, similar_bugs)
-        llm_feedback = generate_developer_feedback(
-            error=result["error"],
-            rca=rca_summary,
-            similar_bugs=similar_bugs,
-            source_code=request.code,
-        )
 
         return {
             "success": False,
@@ -83,7 +85,7 @@ async def execute(request: ExecuteRequest):
             "query_embedding": query_embedding,
             "root_cause_analysis": rca_summary["summary"],
             "suggested_fix": rca_summary["suggested_fix"],
-            "llm_feedback": llm_feedback,
+            "llm_feedback": None,
             "similarity_scores": [match["score"] for match in similar_bugs],
             "rca": rca_summary,
             "execution_time": result.get("execution_time", ""),
@@ -98,6 +100,43 @@ async def execute(request: ExecuteRequest):
         "error": None,
         "execution_time": result.get("execution_time", ""),
     }
+
+
+@app.post("/stream-feedback")
+async def stream_feedback(request: FeedbackStreamRequest):
+    from fastapi.responses import StreamingResponse
+    from llm.feedback_model import stream_developer_feedback_generator
+
+    similar_bugs = request.similar_bugs
+    if similar_bugs is None:
+        try:
+            from services.search_service import get_similar_bugs
+            from services.code_parser import parse_traceback
+            tb = request.error.get("traceback", "")
+            exc_type = request.error.get("type", "")
+            exc_msg = request.error.get("message", "")
+            parsed = parse_traceback(tb)
+            line_number = parsed.get("line_number", -1)
+            code_context = ""
+            if line_number != -1 and request.source_code:
+                code_lines = request.source_code.split("\n")
+                if 0 < line_number <= len(code_lines):
+                    code_context = code_lines[line_number - 1].strip()
+            semantic_document = f"{exc_type} {exc_msg} {parsed.get('failing_function', '')} {code_context}"
+            similar_bugs = get_similar_bugs(exc_type, tb, semantic_document)
+        except Exception:
+            similar_bugs = []
+
+    return StreamingResponse(
+        stream_developer_feedback_generator(
+            error=request.error,
+            rca=request.rca,
+            similar_bugs=similar_bugs,
+            source_code=request.source_code,
+            model_name=request.model,
+        ),
+        media_type="text/event-stream",
+    )
 
 @app.post("/stop")
 async def stop():
@@ -153,21 +192,22 @@ async def rca(request: RCARequest):
     )
     matches = get_similar_bugs(request.exception_type, request.traceback, semantic_document)
     rca_result = analyze_error(request.exception_type, request.message, request.traceback, matches)
-    llm_feedback = generate_developer_feedback(
-        error={
-            "type": request.exception_type,
-            "message": request.message,
-            "traceback": request.traceback,
-            "line_number": line_number,
-            "failing_function": parsed.get("failing_function", ""),
-            "code_context": code_context,
-            "call_stack": parsed.get("call_stack", []),
-        },
-        rca=rca_result,
-        similar_bugs=matches,
-        source_code=request.code,
-    )
-    return {"rca": rca_result, "llm_feedback": llm_feedback, "semantic_matches": matches}
+    error_details = {
+        "type": request.exception_type,
+        "message": request.message,
+        "traceback": request.traceback,
+        "line_number": line_number,
+        "failing_function": parsed.get("failing_function", ""),
+        "code_context": code_context,
+        "call_stack": parsed.get("call_stack", []),
+    }
+    return {
+        "rca": rca_result,
+        "llm_feedback": None,
+        "semantic_matches": matches,
+        "error_details": error_details,
+    }
+
 
 @app.post("/ingest-bugsinpy")
 async def ingest_bugsinpy(request: IngestRequest):

@@ -177,3 +177,92 @@ export const ingestBugsInPy = async (payload: { limit?: number; run_tests?: bool
     return { indexed: 0, error: `Failed to ingest BugsInPy: ${String(error)}` };
   }
 };
+
+export const streamFeedback = async (
+  error: ErrorDetails,
+  rca: any,
+  similarBugs: SemanticMatch[],
+  sourceCode: string,
+  onChunk: (text: string) => void,
+  onFinish: (feedback: DeveloperFeedback) => void,
+  model?: string
+): Promise<void> => {
+  try {
+    const response = await fetch(`${API_URL}/stream-feedback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        error,
+        rca,
+        similar_bugs: similarBugs,
+        source_code: sourceCode,
+        model,
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    if (!response.body) {
+      throw new Error('ReadableStream not supported by browser or backend response.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let accumulatedText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      accumulatedText += chunk;
+
+      if (accumulatedText.includes('[METADATA_SEPARATOR]')) {
+        const parts = accumulatedText.split('[METADATA_SEPARATOR]');
+        const streamingText = parts[0];
+        const jsonText = parts[1];
+
+        onChunk(streamingText);
+
+        if (jsonText.trim()) {
+          try {
+            const parsed = JSON.parse(jsonText.trim());
+            onFinish(parsed);
+          } catch (e) {
+            console.error('Failed to parse final metadata JSON:', e);
+          }
+        }
+      } else {
+        onChunk(accumulatedText);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to stream feedback:', err);
+    onChunk(`Streaming error: ${String(err)}. Fallback initialized.`);
+    const fallback: DeveloperFeedback = {
+      model_name: 'FallbackEngine',
+      model_version: '1.0',
+      mode: 'fallback',
+      headline: `${error.type || 'Error'}: ${error.message || 'Failing execution'}`,
+      diagnosis: error.traceback || 'No traceback captured.',
+      root_cause: error.message || 'Execution failed.',
+      primary_fix: 'Review surrounding code context and parameters.',
+      severity: 'medium',
+      confidence: 0.5,
+      evidence: [],
+      fix_steps: [],
+      code_actions: [],
+      historical_patterns: [],
+      prevention: [],
+      validation_checks: [],
+      debug_questions: [],
+      learning_note: 'Ensure system requirements and configurations are aligned.',
+    };
+    onFinish(fallback);
+  }
+};
+

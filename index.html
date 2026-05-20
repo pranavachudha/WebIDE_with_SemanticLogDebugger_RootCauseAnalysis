@@ -127,7 +127,6 @@
         .file-item.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
         
         .stats-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 200; padding: 4rem; overflow-y: auto; backdrop-filter: blur(40px); }
-        @keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.75); } }
     </style>
 </head>
 <body>
@@ -373,52 +372,242 @@
             const entries = Object.entries(stats.concepts).sort((a,b)=>b[1]-a[1]);
             const maxVal = Math.max(...Object.values(stats.concepts), 1);
             
-            const getRecommendation = () => {
-                if (entries.length === 0) return "Begin coding to generate performance insights.";
-                const topError = entries[0][0];
-                const maps = {
-                    "MATHEMATICAL INCONSISTENCY": "Focus on 'Guard Clauses' and 'Input Validation'. Always validate denominators and divisors before performing arithmetic operations.",
-                    "BOUNDARY VIOLATION": "Focus on 'Off-by-one errors' and using `enumerate()` instead of manual indexing. Always validate list lengths before loop access.",
-                    "SCHEMA VIOLATION": "Focus on 'Defensive Programming'. Prefer dict.get() over direct key access, and validate incoming data schemas before processing.",
-                    "IDENTIFIER FAILURE": "Focus on 'Variable Scope' and declaration order. Ensure all variables are defined before use and module imports are at the top.",
-                    "SYNTAX ERROR": "Focus on Python's grammar rules — colons after blocks, matching brackets, and consistent indentation. Use an IDE linter to catch issues before running.",
-                    "INDENTATION ERROR": "Standardize on 4-space indentation throughout all files. Never mix tabs and spaces. Configure your editor to show whitespace characters."
-                };
-                return maps[topError.toUpperCase()] || "Focus on modularizing your code to isolate and identify logical leaks.";
+            const topError = entries.length > 0 ? entries[0][0] : "None Yet";
+            const secondError = entries.length > 1 ? entries[1][0] : null;
+
+            const allCategories = [
+                "MATHEMATICAL INCONSISTENCY",
+                "BOUNDARY VIOLATION",
+                "SCHEMA VIOLATION",
+                "IDENTIFIER FAILURE",
+                "SYNTAX ERROR",
+                "INDENTATION ERROR"
+            ];
+            
+            const errorKeys = entries.map(e => e[0].toUpperCase());
+            const perfectCategories = allCategories.filter(c => !errorKeys.includes(c));
+            const strengths = perfectCategories.length > 0 ? perfectCategories : (entries.length > 0 ? [entries[entries.length - 1][0]] : ["General Syntax"]);
+            const topStrength = strengths[0];
+
+            const maps = {
+                "MATHEMATICAL INCONSISTENCY": {
+                    focus: "Math & Edge Cases",
+                    tips: [
+                        "Check your numbers before doing math, especially division.",
+                        "Handle unexpected zero values early so the code doesn't crash.",
+                        "Think about what happens if a variable is empty or negative."
+                    ]
+                },
+                "BOUNDARY VIOLATION": {
+                    focus: "Lists & Loops",
+                    tips: [
+                        "Always make sure the list item you want actually exists.",
+                        "Be careful when looping—don't accidentally go past the end of the list.",
+                        "Check the length of your collections before trying to access the last few items."
+                    ]
+                },
+                "SCHEMA VIOLATION": {
+                    focus: "Data Structures",
+                    tips: [
+                        "Always check if a key exists in a dictionary before trying to use it.",
+                        "Provide a safe fallback value if the data you expect is missing.",
+                        "Make sure external data matches the format you expect before processing it."
+                    ]
+                },
+                "IDENTIFIER FAILURE": {
+                    focus: "Variables & Naming",
+                    tips: [
+                        "Make sure a variable is actually created before you try to use it.",
+                        "Check your spelling—a small typo can break the entire program.",
+                        "Be careful about where a variable lives; variables inside a function might not exist outside it."
+                    ]
+                },
+                "SYNTAX ERROR": {
+                    focus: "Code Formatting",
+                    tips: [
+                        "Watch out for missing parentheses or brackets.",
+                        "Make sure you remember to put colons at the end of 'if' statements and functions.",
+                        "Keep your code simple and readable to avoid structural mistakes."
+                    ]
+                },
+                "INDENTATION ERROR": {
+                    focus: "Spacing & Alignment",
+                    tips: [
+                        "Keep your spacing consistent everywhere.",
+                        "Don't mix tabs and spaces—pick one and stick to it.",
+                        "Pay close attention to how your code lines up inside loops and functions."
+                    ]
+                }
             };
+
+            const defaultTips = [
+                "Break large problems into smaller, easier-to-read pieces.",
+                "Test your code frequently to catch mistakes early.",
+                "Write clear code that is easy to follow."
+            ];
+
+            const topMeta = maps[topError.toUpperCase()] || { focus: "Modularization & Testing", tips: defaultTips };
+            let combinedTips = [...topMeta.tips];
+            if (secondError && maps[secondError.toUpperCase()]) {
+                combinedTips.push(maps[secondError.toUpperCase()].tips[0]);
+            }
+            if (combinedTips.length < 4) {
+                combinedTips.push(defaultTips[0]);
+            }
 
             return (
                 <div className="stats-overlay">
-                    <div style={{maxWidth:'800px', margin:'0 auto'}}>
+                    <div style={{maxWidth:'1200px', margin:'0 auto'}}>
                         <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'4rem'}}>
-                            <h1 style={{fontSize:'2.5rem', fontWeight:300, letterSpacing:'-0.02em'}}>ANALYTICS ENGINE</h1>
+                            <h1 style={{fontSize:'2.5rem', fontWeight:300, letterSpacing:'-0.02em'}}>PROGRAMMER FOCUS</h1>
                             <button className="btn btn-secondary" onClick={onBack}>RETURN TO EDITOR</button>
                         </div>
                         
-                        <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:'2rem', marginBottom:'3rem'}}>
-                            <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'24px', border:'1px solid var(--border)'}}>
-                                <div style={{fontSize:'0.75rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase'}}>Total Faults Detected</div>
-                                <div style={{fontSize:'4rem', fontWeight:800, color:'var(--accent)', lineHeight:'1'}}>{stats.total}</div>
+                        <div style={{display:'grid', gridTemplateColumns: '1fr 1fr', gap:'2rem', marginBottom:'3rem'}}>
+                            <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
+                                <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em'}}>Core Strength</div>
+                                <div style={{fontSize:'2rem', fontWeight:800, color:'var(--success)', lineHeight:'1.4'}}>{topStrength}</div>
+                                <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>You have demonstrated high reliability in this area.</div>
                             </div>
-                            <div className="recommendation-card" style={{marginTop:0}}>
-                                <div style={{fontSize:'0.75rem', fontWeight:800, color:'var(--accent)', marginBottom:'0.75rem', textTransform:'uppercase'}}>Priority Focus</div>
-                                <div style={{fontSize:'1.1rem', lineHeight:'1.6', fontWeight:500, color:'#e2e8f0'}}>{getRecommendation()}</div>
+                            
+                            <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
+                                <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em'}}>Primary Focus Area</div>
+                                <div style={{fontSize:'2rem', fontWeight:800, color:'var(--error)', lineHeight:'1.4'}}>{topError}</div>
+                                {secondError && <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>Secondary Weakness: <span style={{color: '#fcd34d'}}>{secondError}</span></div>}
                             </div>
                         </div>
 
-                        <div style={{display:'flex', flexDirection:'column', gap:'2.5rem'}}>
-                            <h2 style={{fontSize:'1rem', fontWeight:700, color:'var(--text-dim)', borderBottom:'1px solid var(--border)', paddingBottom:'1rem'}}>FAULT DISTRIBUTION</h2>
-                            {entries.map(([c, count]) => (
-                                <div key={c}>
-                                    <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.95rem', marginBottom:'0.75rem', fontWeight:600}}>
-                                        <span>{c.toUpperCase()}</span>
-                                        <span style={{color:'var(--accent)'}}>{count}</span>
+                        <div style={{display:'grid', gridTemplateColumns:'1fr 1.2fr', gap:'2.5rem'}}>
+                            {/* Fault Statistics */}
+                            <div style={{background:'rgba(255,255,255,0.015)', padding:'3rem', borderRadius:'24px', border:'1px solid var(--border)'}}>
+                                <h2 style={{fontSize:'1.1rem', fontWeight:800, color:'var(--text-dim)', letterSpacing:'0.1em', marginBottom:'2.5rem', textTransform:'uppercase'}}>Fault Statistics</h2>
+                                {entries.length === 0 ? (
+                                    <div style={{color:'var(--text-dim)', fontStyle:'italic'}}>No statistical data recorded yet. Start coding!</div>
+                                ) : (
+                                    <div style={{display:'flex', flexDirection:'column', gap:'1.75rem'}}>
+                                        {entries.map(([c, count]) => (
+                                            <div key={c}>
+                                                <div style={{display:'flex', justifyContent:'space-between', fontSize:'0.9rem', marginBottom:'0.75rem', fontWeight:600}}>
+                                                    <span style={{color: '#e2e8f0'}}>{c.toUpperCase()}</span>
+                                                    <span style={{color:'var(--accent)'}}>{count} instances</span>
+                                                </div>
+                                                <div style={{height:'6px', background:'rgba(255,255,255,0.05)', borderRadius:'3px', overflow:'hidden'}}>
+                                                    <div style={{height:'100%', background:'var(--accent)', width: `${(count/maxVal)*100}%`, borderRadius:'3px'}}></div>
+                                                </div>
+                                            </div>
+                                        ))}
                                     </div>
-                                    <div style={{height:'8px', background:'rgba(255,255,255,0.05)', borderRadius:'4px', overflow:'hidden'}}>
-                                        <div style={{height:'100%', background:'var(--accent)', width: `${(count/maxVal)*100}%`, borderRadius:'4px'}}></div>
+                                )}
+                            </div>
+
+                            {/* Programmer Growth Tips */}
+                            <div className="recommendation-card" style={{marginTop:0, padding:'3.5rem', borderRadius:'24px', background:'rgba(59, 130, 246, 0.05)'}}>
+                                <h2 style={{fontSize:'1.2rem', fontWeight:800, color:'var(--accent)', letterSpacing:'0.1em', marginBottom:'2.5rem', textTransform:'uppercase'}}>Actionable Growth Plan</h2>
+                                
+                                <div style={{marginBottom:'3rem'}}>
+                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', fontWeight:700, textTransform:'uppercase', marginBottom:'0.5rem', letterSpacing:'0.1em'}}>Recommended Study Area</div>
+                                    <div style={{fontSize:'1.8rem', fontWeight:600, color:'#fff'}}>{topMeta.focus}</div>
+                                </div>
+
+                                <div>
+                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', fontWeight:700, textTransform:'uppercase', marginBottom:'1.5rem', letterSpacing:'0.1em'}}>Key Practices to Focus On</div>
+                                    <ul style={{margin:0, paddingLeft:'1.5rem', color:'#e2e8f0', fontSize:'1.15rem', lineHeight:'1.8', display:'flex', flexDirection:'column', gap:'1.25rem'}}>
+                                        {combinedTips.slice(0, 4).map((tip, idx) => (
+                                            <li key={idx} style={{listStyleType:'disc'}}>{tip}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function BenchmarksPanel({ onBack }) {
+            return (
+                <div className="stats-overlay">
+                    <div style={{maxWidth:'900px', margin:'0 auto'}}>
+                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'3rem'}}>
+                            <h1 style={{fontSize:'2.5rem', fontWeight:300, letterSpacing:'-0.02em'}}>MODEL BENCHMARKS</h1>
+                            <button className="btn btn-secondary" onClick={onBack}>RETURN TO EDITOR</button>
+                        </div>
+                        
+                        <div style={{display:'flex', flexDirection:'column', gap:'1.5rem'}}>
+                            {/* Qwen */}
+                            <div style={{background:'rgba(255,255,255,0.02)', border:'1px solid var(--border)', borderRadius:'16px', padding:'2rem', display:'grid', gridTemplateColumns:'2fr 1fr', gap:'2rem'}}>
+                                <div>
+                                    <div style={{fontSize:'1.2rem', fontWeight:800, color:'var(--accent)', marginBottom:'0.5rem'}}>Qwen 2.5 Coder 1.5B</div>
+                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'1rem'}}>986 MB • Default</div>
+                                    <p style={{fontSize:'0.9rem', lineHeight:'1.5', color:'#e2e8f0'}}>
+                                        Highly specialized for coding tasks. It excels at extremely fast, concise patches and root cause pinpointing. Its output is succinct, making it ideal for rapid iteration.
+                                    </p>
+                                    <div style={{marginTop:'1.5rem', padding:'12px', background:'rgba(255,255,255,0.03)', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.1)'}}>
+                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em'}}>Recommended Specs</div>
+                                        <div style={{fontSize:'0.9rem', fontWeight:600, color:'#e2e8f0', marginTop:'4px'}}>8GB RAM</div>
                                     </div>
                                 </div>
-                            ))}
+                                <div style={{display:'flex', flexDirection:'column', gap:'1rem', borderLeft:'1px solid var(--border)', paddingLeft:'2rem'}}>
+                                    <div>
+                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Avg Response Time</div>
+                                        <div style={{fontSize:'1.5rem', fontWeight:800, color:'var(--success)'}}>~450ms</div>
+                                    </div>
+                                    <div>
+                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Output Quality</div>
+                                        <div style={{fontSize:'1.1rem', fontWeight:600, color:'#e2e8f0'}}>Precise / Direct</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            {/* Llama 3.2 1B */}
+                            <div style={{background:'rgba(255,255,255,0.02)', border:'1px solid var(--border)', borderRadius:'16px', padding:'2rem', display:'grid', gridTemplateColumns:'2fr 1fr', gap:'2rem'}}>
+                                <div>
+                                    <div style={{fontSize:'1.2rem', fontWeight:800, color:'var(--accent)', marginBottom:'0.5rem'}}>Llama 3.2 1B</div>
+                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'1rem'}}>1.3 GB</div>
+                                    <p style={{fontSize:'0.9rem', lineHeight:'1.5', color:'#e2e8f0'}}>
+                                        A powerful and lightweight general-purpose model by Meta. Provides excellent step-by-step explanations and broad reasoning, though slightly more verbose than Qwen. Great for learning and debugging complex logic.
+                                    </p>
+                                    <div style={{marginTop:'1.5rem', padding:'12px', background:'rgba(255,255,255,0.03)', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.1)'}}>
+                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em'}}>Recommended Specs</div>
+                                        <div style={{fontSize:'0.9rem', fontWeight:600, color:'#e2e8f0', marginTop:'4px'}}>8GB RAM • 2GB VRAM</div>
+                                    </div>
+                                </div>
+                                <div style={{display:'flex', flexDirection:'column', gap:'1rem', borderLeft:'1px solid var(--border)', paddingLeft:'2rem'}}>
+                                    <div>
+                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Avg Response Time</div>
+                                        <div style={{fontSize:'1.5rem', fontWeight:800, color:'#fcd34d'}}>~850ms</div>
+                                    </div>
+                                    <div>
+                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Output Quality</div>
+                                        <div style={{fontSize:'1.1rem', fontWeight:600, color:'#e2e8f0'}}>Explanatory / Thorough</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Phi-4 Mini 3.8B */}
+                            <div style={{background:'rgba(255,255,255,0.02)', border:'1px solid var(--border)', borderRadius:'16px', padding:'2rem', display:'grid', gridTemplateColumns:'2fr 1fr', gap:'2rem'}}>
+                                <div>
+                                    <div style={{fontSize:'1.2rem', fontWeight:800, color:'var(--accent)', marginBottom:'0.5rem'}}>Phi-4 Mini 3.8B</div>
+                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'1rem'}}>2.5 GB</div>
+                                    <p style={{fontSize:'0.9rem', lineHeight:'1.5', color:'#e2e8f0'}}>
+                                        The largest of the three, featuring superior reasoning and instruction-following. It produces the most accurate and high-quality root cause analysis for deeply complex, multi-frame errors, at the cost of a slightly longer response time.
+                                    </p>
+                                    <div style={{marginTop:'1.5rem', padding:'12px', background:'rgba(255,255,255,0.03)', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.1)'}}>
+                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em'}}>Recommended Specs</div>
+                                        <div style={{fontSize:'0.9rem', fontWeight:600, color:'#e2e8f0', marginTop:'4px'}}>16GB RAM • 6GB VRAM</div>
+                                    </div>
+                                </div>
+                                <div style={{display:'flex', flexDirection:'column', gap:'1rem', borderLeft:'1px solid var(--border)', paddingLeft:'2rem'}}>
+                                    <div>
+                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Avg Response Time</div>
+                                        <div style={{fontSize:'1.5rem', fontWeight:800, color:'#f87171'}}>~1.4s</div>
+                                    </div>
+                                    <div>
+                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Output Quality</div>
+                                        <div style={{fontSize:'1.1rem', fontWeight:600, color:'#e2e8f0'}}>Advanced / Highly Accurate</div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -440,7 +629,137 @@
             return ['1'];
         };
 
+        const parsePartialJSON = (raw) => {
+            const result = {};
+            if (!raw) return result;
+            
+            // Clean markdown code fences if any
+            let cleaned = raw.replace(/```(?:json)?/g, "").trim();
+            
+            const stringFields = ["headline", "diagnosis", "root_cause", "primary_fix", "severity", "learning_note"];
+            stringFields.forEach(field => {
+                const completeRegex = new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`);
+                const completeMatch = cleaned.match(completeRegex);
+                if (completeMatch) {
+                    result[field] = completeMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                } else {
+                    const partialRegex = new RegExp(`"${field}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)$`);
+                    const partialMatch = cleaned.match(partialRegex);
+                    if (partialMatch) {
+                        result[field] = partialMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                    }
+                }
+            });
+
+            const listFields = ["evidence", "fix_steps", "prevention", "validation_checks", "debug_questions"];
+            listFields.forEach(field => {
+                const arrayRegex = new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)\\]`);
+                const arrayMatch = cleaned.match(arrayRegex);
+                if (arrayMatch) {
+                    const itemsText = arrayMatch[1];
+                    const items = [];
+                    const itemRegex = /"((?:[^"\\]|\\.)*)"/g;
+                    let itemMatch;
+                    while ((itemMatch = itemRegex.exec(itemsText)) !== null) {
+                        const val = itemMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                        if (!["title", "reason", "before", "after", "step"].includes(val.toLowerCase().trim())) {
+                            items.push(val);
+                        }
+                    }
+                    result[field] = items;
+                } else {
+                    const partialArrayRegex = new RegExp(`"${field}"\\s*:\\s*\\[([\\s\\S]*?)$`);
+                    const partialArrayMatch = cleaned.match(partialArrayRegex);
+                    if (partialArrayMatch) {
+                        const itemsText = partialArrayMatch[1];
+                        const items = [];
+                        const itemRegex = /"((?:[^"\\]|\\.)*)"/g;
+                        let itemMatch;
+                        let lastIndex = 0;
+                        while ((itemMatch = itemRegex.exec(itemsText)) !== null) {
+                            const val = itemMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                            if (!["title", "reason", "before", "after", "step"].includes(val.toLowerCase().trim())) {
+                                items.push(val);
+                            }
+                            lastIndex = itemRegex.lastIndex;
+                        }
+                        const trailingText = itemsText.slice(lastIndex);
+                        const trailingMatch = trailingText.match(/"((?:[^"\\]|\\.)*)$/);
+                        if (trailingMatch) {
+                            items.push(trailingMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n'));
+                        }
+                        result[field] = items;
+                    }
+                }
+            });
+
+            const actionsRegex = /"code_actions"\s*:\s*\[([\s\S]*?)\]/;
+            const actionsMatch = cleaned.match(actionsRegex);
+            if (actionsMatch) {
+                const actionsText = actionsMatch[1];
+                const actions = [];
+                const objRegex = /\{([\s\S]*?)\}/g;
+                let objMatch;
+                while ((objMatch = objRegex.exec(actionsText)) !== null) {
+                    const objContent = objMatch[1];
+                    const action = {};
+                    ["title", "reason", "before", "after"].forEach(key => {
+                        const keyMatch = objContent.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+                        if (keyMatch) action[key] = keyMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                    });
+                    actions.push(action);
+                }
+                result["code_actions"] = actions;
+            } else {
+                const partialActionsRegex = /"code_actions"\s*:\s*\[([\s\S]*?)$/;
+                const partialActionsMatch = cleaned.match(partialActionsRegex);
+                if (partialActionsMatch) {
+                    const actionsText = partialActionsMatch[1];
+                    const actions = [];
+                    const objRegex = /\{([\s\S]*?)\}/g;
+                    let objMatch;
+                    let lastIndex = 0;
+                    while ((objMatch = objRegex.exec(actionsText)) !== null) {
+                        const objContent = objMatch[1];
+                        const action = {};
+                        ["title", "reason", "before", "after"].forEach(key => {
+                            const keyMatch = objContent.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+                            if (keyMatch) action[key] = keyMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                        });
+                        actions.push(action);
+                        lastIndex = objRegex.lastIndex;
+                    }
+                    const trailingText = actionsText.slice(lastIndex);
+                    const trailingObjMatch = trailingText.match(/\{([\s\S]*?)$/);
+                    if (trailingObjMatch) {
+                        const objContent = trailingObjMatch[1];
+                        const action = {};
+                        ["title", "reason", "before", "after"].forEach(key => {
+                            const completeMatch = objContent.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)"`));
+                            if (completeMatch) {
+                                action[key] = completeMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                            } else {
+                                const partialMatch = objContent.match(new RegExp(`"${key}"\\s*:\\s*"((?:[^"\\\\]|\\\\.)*)$`));
+                                if (partialMatch) action[key] = partialMatch[1].replace(/\\"/g, '"').replace(/\\n/g, '\n');
+                            }
+                        });
+                        actions.push(action);
+                    }
+                    result["code_actions"] = actions;
+                }
+            }
+
+            return result;
+        };
+
+        const LOCAL_MODELS = [
+          { id: 'qwen2.5-coder:1.5b', name: 'Qwen 2.5 Coder 1.5B', description: 'Optimized for high-speed coding and precise explanation. Extremely lightweight.', size: '986 MB' },
+          { id: 'llama3.2:1b', name: 'Llama 3.2 1B', description: 'Ultra-fast general reasoning model by Meta, perfect for tight memory constraints.', size: '1.3 GB' },
+          { id: 'phi4-mini:latest', name: 'Phi-4 Mini 3.8B', description: 'Advanced instructions and code reasoning. Highly intelligent and resource-efficient.', size: '2.5 GB' }
+        ];
+
         function App() {
+            const [selectedModel, setSelectedModel] = useState('qwen2.5-coder:1.5b');
             const [files, setFiles] = useState(loadFiles());
             const [activeId, setActiveId] = useState(() => localStorage.getItem('pyglide_activeId') || '1');
             const [openTabs, setOpenTabs] = useState(loadTabs());
@@ -455,6 +774,7 @@
             const pendingInputUidRef = useRef(null);
             const isReplRef = useRef(true);
             const workerRef = useRef(null);
+            const streamAbortControllerRef = useRef(null);
             
             const [termHeight, setTermHeight] = useState(250);
 
@@ -577,7 +897,6 @@ except:
                 if (!openTabs.includes(id)) setOpenTabs([...openTabs, id]);
                 setActiveId(id);
                 setRca(null);
-                rebootWorker();
             };
 
             const closeTab = (e, id) => {
@@ -587,7 +906,6 @@ except:
                 if (activeId === id) {
                     const nextId = newTabs.length > 0 ? newTabs[newTabs.length - 1] : null;
                     setActiveId(nextId);
-                    rebootWorker();
                 }
             };
 
@@ -747,52 +1065,125 @@ except:
                         if (id === 'run_main' || id.startsWith('repl_')) {
                             if (termInstance.current) termInstance.current.write('>>> ');
                             isReplRef.current = true;
+                            if (type === 'done' && id === 'run_main') {
+                                setRca(null);
+                            }
                         }
 
                         if (type === 'error') {
                             const currentCode = editorInstance.current ? editorInstance.current.getValue() : '';
                             const base = analyze(error, currentCode);
+
+                            if (streamAbortControllerRef.current) {
+                                try {
+                                    streamAbortControllerRef.current.abort();
+                                } catch (e) {}
+                            }
+                            streamAbortControllerRef.current = new AbortController();
+
                             setRca({
                                 ...base,
                                 feedback: null,
                                 llmLoading: true,
-                                mlError: null
+                                mlError: null,
+                                streamText: ''
                             });
 
-                            fetchLocalMLFeedback(error, currentCode).then((feedback) => {
-                                const action = (feedback.code_actions || []).find(item => item.after) || (feedback.code_actions || [])[0] || null;
-                                const codeSuggestion = action
-                                    ? [
-                                        action.before ? `Current:\n${action.before}` : '',
-                                        action.after ? `\nLearned repair pattern:\n${action.after}` : ''
-                                      ].filter(Boolean).join('\n')
-                                    : '';
-                                const normalized = {
-                                    confidence: feedback.confidence || 0,
-                                    evidence: feedback.evidence || [],
-                                    fixSteps: feedback.fix_steps || [],
-                                    prevention: feedback.prevention || [],
-                                    questions: feedback.debug_questions || [],
-                                    codeSuggestion
-                                };
-                                setRca(p => p ? {
-                                    ...p,
-                                    feedback: normalized,
-                                    llmLoading: false,
-                                    mlError: null,
-                                    ins: {
-                                        title: base.ins.title,
-                                        symptom: feedback.headline || base.ins.symptom,
-                                        cause: feedback.root_cause || base.ins.cause,
-                                        resolution: feedback.primary_fix || base.ins.resolution
+                            const excType = extractExceptionType(error);
+                            const excMsg = extractExceptionMessage(error);
+
+                            fetch('http://localhost:8000/stream-feedback', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                signal: streamAbortControllerRef.current.signal,
+                                body: JSON.stringify({
+                                    error: {
+                                        type: excType,
+                                        message: excMsg,
+                                        traceback: error,
+                                        line_number: base.frames.length > 0 ? base.frames[base.rc].line : -1,
+                                        failing_function: base.frames.length > 0 ? base.frames[base.rc].func : ""
+                                    },
+                                    rca: null,
+                                    similar_bugs: null,
+                                    source_code: currentCode,
+                                    model: selectedModel
+                                })
+                            }).then(async (streamResponse) => {
+                                if (!streamResponse.ok) throw new Error(`Stream connection failed: ${streamResponse.status}`);
+                                if (!streamResponse.body) throw new Error('ReadableStream not supported');
+
+                                const reader = streamResponse.body.getReader();
+                                const decoder = new TextDecoder();
+                                let accumulatedText = '';
+
+                                while (true) {
+                                    const { done, value } = await reader.read();
+                                    if (done) break;
+
+                                    const chunk = decoder.decode(value, { stream: true });
+                                    accumulatedText += chunk;
+
+                                    if (accumulatedText.includes('[METADATA_SEPARATOR]')) {
+                                        const parts = accumulatedText.split('[METADATA_SEPARATOR]');
+                                        const streamingText = parts[0];
+                                        const jsonText = parts[1];
+
+                                        let finalFeedback = parsePartialJSON(streamingText);
+                                        
+                                        if (jsonText.trim()) {
+                                            try {
+                                                const parsed = JSON.parse(jsonText.trim());
+                                                const ensureArray = (val) => Array.isArray(val) ? val : (val ? [val] : []);
+                                                const codeActs = ensureArray(parsed.code_actions);
+                                                const action = codeActs.find(item => item && item.after) || codeActs[0] || null;
+                                                const codeSuggestion = action
+                                                    ? [
+                                                        action.before ? `Current:\n${action.before}` : '',
+                                                        action.after ? `\nLearned repair pattern:\n${action.after}` : ''
+                                                      ].filter(Boolean).join('\n')
+                                                    : '';
+                                                
+                                                finalFeedback = {
+                                                     headline: finalFeedback.headline || parsed.headline || '',
+                                                     root_cause: finalFeedback.root_cause || parsed.root_cause || '',
+                                                     primary_fix: finalFeedback.primary_fix || parsed.primary_fix || '',
+                                                     confidence: parsed.confidence || 0,
+                                                     evidence: ensureArray(finalFeedback.evidence?.length ? finalFeedback.evidence : parsed.evidence),
+                                                     fix_steps: ensureArray(finalFeedback.fix_steps?.length ? finalFeedback.fix_steps : parsed.fix_steps),
+                                                     prevention: ensureArray(finalFeedback.prevention?.length ? finalFeedback.prevention : parsed.prevention),
+                                                     debug_questions: ensureArray(finalFeedback.debug_questions?.length ? finalFeedback.debug_questions : parsed.debug_questions),
+                                                     code_actions: codeActs,
+                                                     codeSuggestion
+                                                 };
+                                            } catch (e) {
+                                                // Silent catch: waiting for full JSON chunk
+                                            }
+                                        }
+                                        
+                                        setRca(p => p ? {
+                                            ...p,
+                                            streamText: streamingText,
+                                            feedback: finalFeedback,
+                                            ins: p.ins
+                                        } : p);
+                                    } else {
+                                        setRca(p => p ? { ...p, streamText: accumulatedText } : p);
                                     }
-                                } : p);
+                                }
                             }).catch((err) => {
+                                if (err.name === 'AbortError') return;
                                 setRca(p => p ? {
                                     ...p,
                                     llmLoading: false,
                                     mlError: `Local ML backend unavailable: ${err.message}`
                                 } : p);
+                            }).finally(() => {
+                                setRca(p => {
+                                    if (!p) return p;
+                                    const finalFb = p.feedback || parsePartialJSON(p.streamText);
+                                    return { ...p, feedback: finalFb, llmLoading: false };
+                                });
                             });
                         }
                     }
@@ -851,7 +1242,7 @@ except:
             const run = async () => {
                 if (!editorInstance.current) return;
                 const currentCode = editorInstance.current.getValue() || '';
-                setRca(null);
+                
                 
                 rebootWorker(true);
                 
@@ -1067,8 +1458,21 @@ except:
             return (
                 <div className="layout">
                     {view === 'stats' && <AnalyticsPanel onBack={()=>setView('editor')} />}
+                    {view === 'benchmarks' && <BenchmarksPanel onBack={()=>setView('editor')} />}
                     <aside className="sidebar">
-                        <div className="logo">PYGLIDE</div>
+                        <div className="logo" style={{marginBottom: '1.5rem'}}>PYGLIDE</div>
+                        
+                        <div style={{display:'flex', flexDirection:'column', gap:'10px', padding:'0 10px', marginBottom:'2rem'}}>
+                            <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>setView('stats')} title="View Programmer Focus Analytics">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
+                                PROGRAMMER FOCUS
+                            </button>
+                            <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>setView('benchmarks')} title="View Model Benchmarks">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+                                MODEL BENCHMARKS
+                            </button>
+                        </div>
+
                         <div 
                             style={{
                                 display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px', paddingLeft:'10px', paddingRight:'10px',
@@ -1087,13 +1491,33 @@ except:
                             </div>
                         </div>
                         {renderTree(null)}
-                        <div style={{marginTop:'auto'}} className="file-item" onClick={()=>setView('stats')}>
-                            <span style={{opacity: 0.6}}>ANALYTICS ENGINE</span>
-                        </div>
                     </aside>
                     <div className="main">
                         <div className="toolbar">
-                            <button className="btn" onClick={run} disabled={!engineReady}>{engineReady ? "EXECUTE RUNTIME" : "LOADING ENGINE..."}</button>
+                            <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
+                                <select 
+                                    value={selectedModel}
+                                    onChange={(e) => setSelectedModel(e.target.value)}
+                                    title="Semantic Engine Model"
+                                    style={{
+                                        background: 'rgba(255,255,255,0.05)',
+                                        color: '#e2e8f0',
+                                        border: '1px solid var(--border)',
+                                        borderRadius: '4px',
+                                        padding: '7px 12px',
+                                        fontSize: '11px',
+                                        fontWeight: '600',
+                                        fontFamily: 'inherit',
+                                        outline: 'none',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {LOCAL_MODELS.map(m => (
+                                        <option key={m.id} value={m.id} style={{background: '#0a0a0c'}}>{m.name}</option>
+                                    ))}
+                                </select>
+                                <button className="btn" onClick={run} disabled={!engineReady}>{engineReady ? "EXECUTE RUNTIME" : "LOADING ENGINE..."}</button>
+                            </div>
                             <div style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:800, letterSpacing:'1px', display:'flex', alignItems:'center', gap:'8px'}}>
                                 <div style={{width:6, height:6, borderRadius:'50%', background:'var(--success)'}}></div> SYSTEM STANDBY
                             </div>
@@ -1114,134 +1538,146 @@ except:
                                 </div>
                                 <div id="monaco-container" ref={monacoRef}></div>
                             </div>
-                            {rca && (
-                                <div className="rca-panel">
-                                    <div className="rca-header">
-                                        <div className="rca-title">ROOT CAUSE ANALYSIS</div>
-                                        <button onClick={()=>setRca(null)} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontWeight:700, fontSize:'0.75rem', transition:'color 0.2s'}} onMouseOver={e=>e.target.style.color='#fff'} onMouseOut={e=>e.target.style.color='var(--text-dim)'}>DISMISS</button>
-                                    </div>
+                            {rca && (() => {
+                                const parsedStream = rca.llmLoading ? parsePartialJSON(rca.streamText) : {};
+                                const activeFeedback = rca.llmLoading ? parsedStream : (rca.feedback || {});
+                                
+                                const deterministicIns = rca.ins;
 
-                                    <div className="diagnostic-card">
-                                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.25rem'}}>
-                                            <div style={{fontSize:'0.65rem', fontWeight:800, color:'var(--accent)', letterSpacing:'0.1em'}}>SEMANTIC DEBUGGER FEEDBACK</div>
-                                            {rca.llmLoading 
-                                                ? <div style={{fontSize:'0.65rem', color:'var(--text-dim)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
-                                                    <div style={{width:6, height:6, borderRadius:'50%', background:'var(--accent)', animation:'pulse 1s infinite'}}></div> QUERYING MODEL...
-                                                  </div>
-                                                : <div style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
-                                                    <div style={{width:6, height:6, borderRadius:'50%', background:'var(--success)'}}></div> READY
-                                                  </div>
-                                            }
+                                return (
+                                    <div className="rca-panel">
+                                        <div className="rca-header">
+                                            <div className="rca-title">ROOT CAUSE ANALYSIS</div>
+                                            <button onClick={()=>setRca(null)} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontWeight:700, fontSize:'0.75rem', transition:'color 0.2s'}} onMouseOver={e=>e.target.style.color='#fff'} onMouseOut={e=>e.target.style.color='var(--text-dim)'}>DISMISS</button>
                                         </div>
 
-                                        {rca.llmLoading ? (
-                                            <div style={{fontFamily:'JetBrains Mono, monospace', fontSize:'13px', lineHeight:'1.8', color:'#e2e8f0', whiteSpace:'pre-wrap', minHeight:'80px'}}>
-                                                {rca.streamText || ''}
-                                                <span style={{display:'inline-block', width:'2px', height:'14px', background:'var(--accent)', verticalAlign:'text-bottom', marginLeft:'2px', animation:'pulse 0.8s steps(1) infinite'}}></span>
+                                        <div className="diagnostic-card" style={{border: '1px solid rgba(168, 85, 247, 0.2)', background: 'rgba(168, 85, 247, 0.05)'}}>
+                                            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.25rem'}}>
+                                                <div style={{fontSize:'0.65rem', fontWeight:800, color:'#a855f7', letterSpacing:'0.1em'}}>SEMANTIC LLM ANALYSIS</div>
+                                                {rca.llmLoading 
+                                                    ? <div style={{fontSize:'0.65rem', color:'var(--text-dim)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
+                                                        <div style={{width:6, height:6, borderRadius:'50%', background:'#a855f7', animation:'pulse 1s infinite'}}></div> STREAMING...
+                                                      </div>
+                                                    : <div style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
+                                                        <div style={{width:6, height:6, borderRadius:'50%', background:'var(--success)'}}></div> READY
+                                                      </div>
+                                                }
                                             </div>
-                                        ) : (
-                                            <>
-                                                <div className="diagnostic-section">
-                                                    <div className="diagnostic-label">1. Symptom Identified</div>
-                                                    <div className="diagnostic-text">{rca.ins.symptom}</div>
+
+                                            {activeFeedback && (
+                                                <>
+                                                    {activeFeedback.headline && (
+                                                        <div className="feedback-block" style={{borderLeft: '2px solid #a855f7', paddingLeft: '1rem'}}>
+                                                            <div className="feedback-block-title" style={{color: '#a855f7'}}>LLM Diagnosis</div>
+                                                            <p style={{fontSize: '0.9rem', color: '#e2e8f0', lineHeight: 1.6, margin: 0}}>{activeFeedback.headline}</p>
+                                                        </div>
+                                                    )}
+                                                    {activeFeedback.root_cause && (
+                                                        <div className="feedback-block" style={{borderLeft: '2px solid #a855f7', paddingLeft: '1rem'}}>
+                                                            <div className="feedback-block-title" style={{color: '#a855f7'}}>Deep Root Cause</div>
+                                                            <p style={{fontSize: '0.9rem', color: '#e2e8f0', lineHeight: 1.6, margin: 0}}>{activeFeedback.root_cause}</p>
+                                                        </div>
+                                                    )}
+                                                    {(Array.isArray(activeFeedback.evidence) && activeFeedback.evidence.length > 0) && (
+                                                        <div className="feedback-block">
+                                                            <div className="feedback-block-title">Evidence</div>
+                                                            <ul className="feedback-list">
+                                                                {activeFeedback.evidence.map((item, idx) => <li key={`e-${idx}`}>{item}</li>)}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+                                                    {((Array.isArray(activeFeedback.fix_steps) && activeFeedback.fix_steps.length > 0) || activeFeedback.primary_fix || (Array.isArray(activeFeedback.code_actions) && activeFeedback.code_actions.length > 0)) && (
+                                                        <div className="feedback-block">
+                                                            <div className="feedback-block-title">Developer Fix Plan</div>
+                                                            {Array.isArray(activeFeedback.fix_steps) && activeFeedback.fix_steps.length > 0 && (
+                                                                <ol className="feedback-list">
+                                                                    {activeFeedback.fix_steps.map((item, idx) => <li key={`f-${idx}`}>{item}</li>)}
+                                                                </ol>
+                                                            )}
+                                                            {(() => {
+                                                                const codeActs = Array.isArray(activeFeedback.code_actions) ? activeFeedback.code_actions : [];
+                                                                const action = codeActs.find(item => item.after) || codeActs[0] || null;
+                                                                const codeSuggestion = action
+                                                                    ? [
+                                                                        action.before ? `Current:\n${action.before}` : '',
+                                                                        action.after ? `\nLearned repair pattern:\n${action.after}` : ''
+                                                                      ].filter(Boolean).join('\n')
+                                                                    : '';
+                                                                if (codeSuggestion) {
+                                                                    return <pre className="code-suggestion">{codeSuggestion}</pre>;
+                                                                }
+                                                                return null;
+                                                            })()}
+                                                        </div>
+                                                    )}
+                                                    {(Array.isArray(activeFeedback.prevention) && activeFeedback.prevention.length > 0) && (
+                                                        <div className="feedback-block">
+                                                            <div className="feedback-block-title">Prevention Checks</div>
+                                                            <ul className="feedback-list">
+                                                                {activeFeedback.prevention.map((item, idx) => <li key={`p-${idx}`}>{item}</li>)}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+                                                    {(Array.isArray(activeFeedback.debug_questions) && activeFeedback.debug_questions.length > 0) && (
+                                                        <div className="feedback-block">
+                                                            <div className="feedback-block-title">Debugging Questions</div>
+                                                            <ul className="feedback-list">
+                                                                {activeFeedback.debug_questions.map((item, idx) => <li key={`q-${idx}`}>{item}</li>)}
+                                                            </ul>
+                                                        </div>
+                                                    )}
+                                                </>
+                                            )}
+
+                                            {rca.mlError && (
+                                                <div className="feedback-block">
+                                                    <div className="feedback-block-title">Local ML Backend</div>
+                                                    <div className="diagnostic-text">{rca.mlError}</div>
                                                 </div>
-                                                <div className="diagnostic-section">
-                                                    <div className="diagnostic-label">2. Root Cause</div>
-                                                    <div className="diagnostic-text">{rca.ins.cause}</div>
-                                                </div>
-                                                <div className="diagnostic-section">
-                                                    <div className="diagnostic-label">3. Recommended Resolution</div>
-                                                    <div className="diagnostic-text">{rca.ins.resolution}</div>
-                                                </div>
-                                                {rca.feedback && (
-                                                    <>
-                                                        {rca.feedback.evidence.length > 0 && (
-                                                            <div className="feedback-block">
-                                                                <div className="feedback-block-title">Evidence</div>
-                                                                <ul className="feedback-list">
-                                                                    {rca.feedback.evidence.map((item, idx) => <li key={`e-${idx}`}>{item}</li>)}
-                                                                </ul>
-                                                            </div>
-                                                        )}
-                                                        {(rca.feedback.fixSteps.length > 0 || rca.feedback.codeSuggestion) && (
-                                                            <div className="feedback-block">
-                                                                <div className="feedback-block-title">Developer Fix Plan</div>
-                                                                {rca.feedback.fixSteps.length > 0 && (
-                                                                    <ol className="feedback-list">
-                                                                        {rca.feedback.fixSteps.map((item, idx) => <li key={`f-${idx}`}>{item}</li>)}
-                                                                    </ol>
-                                                                )}
-                                                                {rca.feedback.codeSuggestion && (
-                                                                    <pre className="code-suggestion">{rca.feedback.codeSuggestion}</pre>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        {rca.feedback.prevention.length > 0 && (
-                                                            <div className="feedback-block">
-                                                                <div className="feedback-block-title">Prevention Checks</div>
-                                                                <ul className="feedback-list">
-                                                                    {rca.feedback.prevention.map((item, idx) => <li key={`p-${idx}`}>{item}</li>)}
-                                                                </ul>
-                                                            </div>
-                                                        )}
-                                                        {rca.feedback.questions.length > 0 && (
-                                                            <div className="feedback-block">
-                                                                <div className="feedback-block-title">Debugging Questions</div>
-                                                                <ul className="feedback-list">
-                                                                    {rca.feedback.questions.map((item, idx) => <li key={`q-${idx}`}>{item}</li>)}
-                                                                </ul>
-                                                            </div>
-                                                        )}
-                                                    </>
-                                                )}
-                                                {rca.mlError && (
-                                                    <div className="feedback-block">
-                                                        <div className="feedback-block-title">Local ML Backend</div>
-                                                        <div className="diagnostic-text">{rca.mlError}</div>
-                                                    </div>
-                                                )}
-                                            </>
-                                        )}
-                                    </div>
-                                    
-                                    <div>
-                                        <div className="rca-title" style={{marginBottom: '2rem'}}>TECHNICAL EXECUTION TRACE</div>
-                                        <div className="graph-container">
-                                            {rca.frames.map((f, i) => {
-                                                const isRoot = i === rca.rc;
-                                                const isException = i === rca.frames.length - 1;
-                                                const isBoth = isRoot && isException;
-                                                return (
-                                                    <div key={i} className={`graph-node ${isRoot ? 'root' : ''} ${isException ? 'exception' : ''}`}>
-                                                        {/* Tags row — always inline at top to avoid absolute overlap */}
-                                                        {(isRoot || isException) && (
-                                                            <div style={{display:'flex', gap:'8px', marginBottom:'12px', flexWrap:'wrap'}}>
-                                                                {isRoot && (
-                                                                    <div style={{fontSize:'9px', fontWeight:900, background:'var(--success)', color:'#000', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
-                                                                        ROOT CAUSE
-                                                                    </div>
-                                                                )}
-                                                                {isException && (
-                                                                    <div style={{fontSize:'9px', fontWeight:900, background:'var(--error)', color:'#fff', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
-                                                                        EXCEPTION
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                        <div style={{fontSize:'13px', fontWeight:700, color:'#f8fafc', marginBottom:'10px'}}>{f.func}() <span style={{fontWeight:500, color:'var(--text-dim)'}}>at Line {f.line}</span></div>
-                                                        <div style={{fontSize:'12px', color:'#93c5fd', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,0,0,0.4)', padding:'10px', borderRadius:'8px', border:'1px solid rgba(147, 197, 253, 0.1)'}}>{f.code.trim()}</div>
-                                                        {i < rca.frames.length - 1 && (
-                                                            <div className="graph-edge">
-                                                                <div className="graph-arrow"></div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
+                                            )}
+
+
+                                        </div>
+
+                                        <div>
+                                            <div className="rca-title" style={{marginBottom: '2rem'}}>TECHNICAL EXECUTION TRACE</div>
+                                            <div className="graph-container">
+                                                {rca.frames.map((f, i) => {
+                                                    const isRoot = i === rca.rc;
+                                                    const isException = i === rca.frames.length - 1;
+                                                    const isBoth = isRoot && isException;
+                                                    return (
+                                                        <div key={i} className={`graph-node ${isRoot ? 'root' : ''} ${isException ? 'exception' : ''}`}>
+                                                            {/* Tags row — always inline at top to avoid absolute overlap */}
+                                                            {(isRoot || isException) && (
+                                                                <div style={{display:'flex', gap:'8px', marginBottom:'12px', flexWrap:'wrap'}}>
+                                                                    {isRoot && (
+                                                                        <div style={{fontSize:'9px', fontWeight:900, background:'var(--success)', color:'#000', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
+                                                                            ROOT CAUSE
+                                                                        </div>
+                                                                    )}
+                                                                    {isException && (
+                                                                        <div style={{fontSize:'9px', fontWeight:900, background:'var(--error)', color:'#fff', padding:'3px 10px', borderRadius:'12px', letterSpacing:'0.05em'}}>
+                                                                            EXCEPTION
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                            <div style={{fontSize:'13px', fontWeight:700, color:'#f8fafc', marginBottom:'10px'}}>{f.func}() <span style={{fontWeight:500, color:'var(--text-dim)'}}>at Line {f.line}</span></div>
+                                                            <div style={{fontSize:'12px', color:'#93c5fd', fontFamily:'JetBrains Mono, monospace', background:'rgba(0,0,0,0.4)', padding:'10px', borderRadius:'8px', border:'1px solid rgba(147, 197, 253, 0.1)'}}>{f.code.trim()}</div>
+                                                            {i < rca.frames.length - 1 && (
+                                                                <div className="graph-edge">
+                                                                    <div className="graph-arrow"></div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
-                            )}
+                                );
+                            })()}
                         </div>
                         <div className="terminal" style={{ height: `${termHeight}px` }}>
                             <div className="terminal-resizer" onMouseDown={startResize}></div>

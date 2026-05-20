@@ -1318,3 +1318,17 @@ pre, code { font-family: "JetBrains Mono", Consolas, monospace; }
   color: var(--muted);
 }
 
+/* Premium Model Selection Styles */
+.model-select-card {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.model-select-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(88, 166, 255, 0.5) !important;
+  box-shadow: 0 4px 20px rgba(88, 166, 255, 0.12) !important;
+}
+
+.model-select-card:active {
+  transform: translateY(0);
+}

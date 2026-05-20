@@ -41,6 +41,7 @@ def generate_developer_feedback(
     rca: dict[str, Any] | None = None,
     similar_bugs: list[dict[str, Any]] | None = None,
     source_code: str = "",
+    model_name: str | None = None,
 ) -> dict[str, Any]:
     """Build a rich developer feedback payload by querying Ollama.
 
@@ -61,14 +62,16 @@ def generate_developer_feedback(
 
     # --- call Ollama -----------------------------------------------------
     try:
-        raw_text = _call_ollama(prompt)
+        raw_text = _call_ollama(prompt, model_name=model_name)
         feedback = _parse_llm_json(raw_text)
     except Exception as exc:
         logger.warning("Ollama call failed (%s); using deterministic fallback.", exc)
         feedback = _deterministic_fallback(error, rca, similar_bugs)
 
     # --- normalise into the exact frontend shape -------------------------
-    return _normalise_feedback(feedback, error, rca)
+    res = _normalise_feedback(feedback, error, rca)
+    res["model_name"] = model_name or OLLAMA_MODEL
+    return res
 
 
 # ---------------------------------------------------------------------------
@@ -102,12 +105,12 @@ def _build_prompt(
         '  "root_cause": "Precise technical root cause",\n'
         '  "primary_fix": "The recommended code change to fix this",\n'
         '  "severity": "low | medium | high | critical",\n'
-        '  "evidence": ["evidence point 1", "evidence point 2", ...],\n'
-        '  "fix_steps": ["step 1", "step 2", ...],\n'
-        '  "code_actions": [{"title": "...", "reason": "...", "before": "old code", "after": "fixed code"}],\n'
-        '  "prevention": ["tip 1", "tip 2", ...],\n'
-        '  "validation_checks": ["check 1", "check 2", ...],\n'
-        '  "debug_questions": ["question 1", "question 2", ...],\n'
+        '  "evidence": ["evidence point 1 (STRING ONLY)", "evidence point 2 (STRING ONLY)"],\n'
+        '  "fix_steps": ["step 1 (STRING ONLY)", "step 2 (STRING ONLY)"],\n'
+        '  "code_actions": [{"before": "old code", "after": "fixed code"}],\n'
+        '  "prevention": ["tip 1 (STRING ONLY)", "tip 2 (STRING ONLY)"],\n'
+        '  "validation_checks": ["check 1 (STRING ONLY)", "check 2 (STRING ONLY)"],\n'
+        '  "debug_questions": ["question 1 (STRING ONLY)", "question 2 (STRING ONLY)"],\n'
         '  "learning_note": "A helpful educational takeaway"\n'
         "}\n"
     )
@@ -182,10 +185,10 @@ def _build_prompt(
 # Ollama HTTP call
 # ---------------------------------------------------------------------------
 
-def _call_ollama(prompt: str) -> str:
+def _call_ollama(prompt: str, model_name: str | None = None) -> str:
     """Send a generate request to the local Ollama server."""
     payload = {
-        "model": OLLAMA_MODEL,
+        "model": model_name or OLLAMA_MODEL,
         "prompt": prompt,
         "stream": False,
         "options": {
@@ -462,3 +465,55 @@ def _default_debug_questions(error: dict[str, Any]) -> list[str]:
         f"What are the runtime values and types at {target}?",
         "Which caller or input first created the invalid state?",
     ]
+
+
+def stream_developer_feedback_generator(
+    error: dict[str, Any],
+    rca: dict[str, Any] | None = None,
+    similar_bugs: list[dict[str, Any]] | None = None,
+    source_code: str = "",
+    model_name: str | None = None,
+) -> typing.Generator[str, None, None]:
+    """Stream raw feedback text from Ollama and then yield separator + normalized JSON."""
+    import typing
+    rca = rca or {}
+    similar_bugs = similar_bugs or []
+    prompt = _build_prompt(error, rca, similar_bugs, source_code)
+    
+    selected_model = model_name or OLLAMA_MODEL
+    raw_text = ""
+    try:
+        payload = {
+            "model": selected_model,
+            "prompt": prompt,
+            "stream": True,
+            "options": {
+                "temperature": 0.4,
+                "num_predict": 1024,
+                "num_ctx": 2048,
+            },
+        }
+        with httpx.stream("POST", f"{OLLAMA_BASE_URL}/api/generate", json=payload, timeout=OLLAMA_TIMEOUT) as r:
+            r.raise_for_status()
+            for chunk in r.iter_lines():
+                if chunk:
+                    try:
+                        data = json.loads(chunk)
+                        response_text = data.get("response", "")
+                        raw_text += response_text
+                        yield response_text
+                    except Exception:
+                        pass
+    except Exception as exc:
+        logger.warning("Ollama stream failed (%s); using deterministic fallback.", exc)
+        fallback_text = "Ollama connection failed or model not responding. Loading local deterministic fallback...\n"
+        yield fallback_text
+        raw_text = fallback_text
+
+    feedback = _parse_llm_json(raw_text)
+    normalized = _normalise_feedback(feedback, error, rca)
+    normalized["model_name"] = selected_model
+    
+    yield "\n[METADATA_SEPARATOR]\n"
+    yield json.dumps(normalized)
+

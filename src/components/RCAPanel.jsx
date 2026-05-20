@@ -59,7 +59,7 @@ const CodeActions = ({ actions = [] }) => {
   );
 };
 
-function RCAPanel({ execution, activeTab, onTabChange }) {
+function RCAPanel({ execution, activeTab, onTabChange, streamingFeedback, isStreaming }) {
   if (!execution) return <EmptyState />;
 
   if (!execution.error) {
@@ -85,6 +85,15 @@ function RCAPanel({ execution, activeTab, onTabChange }) {
   const [embeddingsError, setEmbeddingsError] = useState('');
   const [filterText, setFilterText] = useState('');
   const [selectedRecordId, setSelectedRecordId] = useState(null);
+
+  useEffect(() => {
+    if (activeTab === 'rca' && isStreaming) {
+      const pre = document.querySelector('.stream-pre');
+      if (pre) {
+        pre.scrollTop = pre.scrollHeight;
+      }
+    }
+  }, [streamingFeedback, activeTab, isStreaming]);
 
   const normalizeVector = (vector) => {
     const norm = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
@@ -460,6 +469,42 @@ function RCAPanel({ execution, activeTab, onTabChange }) {
 
   const confidence = Math.round((feedback?.confidence || 0) * 100);
   const hasDetailedFeedback = Boolean(feedback);
+
+  if (activeTab === 'rca' && (isStreaming || (!feedback && streamingFeedback))) {
+    return (
+      <div className="debug-content">
+        <div className="feedback-hero">
+          <div>
+            <h3>AI Diagnostic Stream</h3>
+            <p>Analyzing root cause in real-time using local LLM...</p>
+          </div>
+          <div className="feedback-chips animate-pulse">
+            <span className="chip" style={{ background: '#facc15', color: '#1a1f26' }}>Streaming</span>
+          </div>
+        </div>
+
+        <section className="feedback-section" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+          <h4>Generated Output</h4>
+          <pre className="stream-pre" style={{ 
+            background: '#090c10', 
+            color: '#c9d1d9', 
+            padding: '1rem', 
+            borderRadius: '6px', 
+            border: '1px solid #30363d',
+            fontFamily: 'JetBrains Mono, monospace',
+            fontSize: '0.85rem',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            maxHeight: '400px',
+            overflowY: 'auto',
+            lineHeight: '1.4'
+          }}>{streamingFeedback}</pre>
+        </section>
+
+        {renderRuntimeSummary()}
+      </div>
+    );
+  }
 
   return (
     <div className="debug-content">

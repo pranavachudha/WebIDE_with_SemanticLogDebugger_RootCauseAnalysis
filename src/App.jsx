@@ -27,6 +27,7 @@ import {
   ingestBugsInPy,
   stopExecution,
   getEmbeddings,
+  streamFeedback,
 } from './services/api';
 
 const DEFAULT_CODE = `import requests
@@ -87,9 +88,17 @@ const panelTitles = {
   settings: 'Settings',
 };
 
+const LOCAL_MODELS = [
+  { id: 'qwen2.5-coder:1.5b', name: 'Qwen 2.5 Coder 1.5B', description: 'Optimized for high-speed coding and precise explanation. Extremely lightweight.', size: '986 MB' },
+  { id: 'llama3.2:1b', name: 'Llama 3.2 1B', description: 'Ultra-fast general reasoning model by Meta, perfect for tight memory constraints.', size: '1.3 GB' },
+  { id: 'phi4-mini:latest', name: 'Phi-4 Mini 3.8B', description: 'Advanced instructions and code reasoning. Highly intelligent and resource-efficient.', size: '2.5 GB' }
+];
+
 function App() {
   const [files, setFiles] = useState(DEFAULT_FILES);
   const [activeFileId, setActiveFileId] = useState('main');
+
+  const [selectedModel, setSelectedModel] = useState('qwen2.5-coder:1.5b');
 
   const [activePanel, setActivePanel] = useState('explorer');
   const [activeTab, setActiveTab] = useState('rca');
@@ -111,6 +120,8 @@ function App() {
   const [newFileName, setNewFileName] = useState('');
 
   const [isVectorOpen, setIsVectorOpen] = useState(false);
+  const [streamingFeedback, setStreamingFeedback] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
 
   const editorRef = useRef(null);
   const decorationsRef = useRef([]);
@@ -270,6 +281,31 @@ function App() {
           } historical matches.`,
         },
       ]);
+
+      if (result.error) {
+        setIsStreaming(true);
+        setStreamingFeedback('');
+        await streamFeedback(
+          result.error,
+          result.rca,
+          result.semantic_matches || [],
+          activeFile.content,
+          (chunk) => {
+            setStreamingFeedback(chunk);
+          },
+          (finalFeedback) => {
+            setExecution((prev) => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                llm_feedback: finalFeedback,
+              };
+            });
+            setIsStreaming(false);
+          },
+          selectedModel
+        );
+      }
     }
 
     setIsExecuting(false);
@@ -607,27 +643,104 @@ function App() {
 
     if (activePanel === 'settings') {
       return (
-        <div className="panel-empty">
-          <h3>Settings & Shortcuts</h3>
+        <div style={{ padding: '0.25rem' }}>
+          <h3 style={{ marginBottom: '1.25rem', fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--text)' }}>
+            <Settings size={18} style={{ color: 'var(--blue)' }} /> Settings & Models
+          </h3>
 
-          <ul
-            style={{
-              listStyle: 'none',
-              paddingLeft: 0,
-              marginTop: '1rem',
-            }}
-          >
-            <li>Ctrl+Enter — Run</li>
-            <li>Ctrl+O — Upload</li>
-            <li>Ctrl+S — Download current file</li>
-            <li>
-              Ctrl+Shift+D — Download file
-            </li>
-            <li>
-              Ctrl+Shift+V — Open vector
-              visualization
-            </li>
-          </ul>
+          <div style={{ marginBottom: '2rem' }}>
+            <h4 style={{
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              color: 'var(--muted)',
+              letterSpacing: '0.08em',
+              marginBottom: '0.5rem'
+            }}>
+              Active Local Reasoning Model
+            </h4>
+            <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '1.25rem', lineHeight: '1.45' }}>
+              Choose a local Ollama model to power the semantic diagnostics engine. Models are optimized for low-end machines.
+            </p>
+            
+            <div style={{ display: 'grid', gap: '0.85rem' }}>
+              {LOCAL_MODELS.map((model) => {
+                const isActive = selectedModel === model.id;
+                return (
+                  <div
+                    key={model.id}
+                    onClick={() => setSelectedModel(model.id)}
+                    style={{
+                      border: isActive ? '1px solid rgba(88, 166, 255, 0.45)' : '1px solid var(--border)',
+                      background: isActive ? 'linear-gradient(135deg, rgba(88, 166, 255, 0.08), rgba(9, 12, 16, 0.4))' : '#10161d',
+                      borderRadius: '10px',
+                      padding: '14px',
+                      cursor: 'pointer',
+                      transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                      boxShadow: isActive ? '0 4px 20px rgba(88, 166, 255, 0.12)' : 'none',
+                    }}
+                    className="model-select-card"
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <strong style={{ fontSize: '0.9rem', fontWeight: 600, color: isActive ? 'var(--text)' : '#c9d1d9' }}>
+                        {model.name}
+                      </strong>
+                      <span className={`model-badge ${isActive ? '' : 'quiet'}`} style={{
+                        fontSize: '10px',
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                        background: isActive ? 'rgba(88, 166, 255, 0.16)' : 'rgba(255, 255, 255, 0.05)',
+                        border: isActive ? '1px solid rgba(88, 166, 255, 0.3)' : '1px solid var(--border)',
+                        color: isActive ? '#58a6ff' : 'var(--muted)'
+                      }}>
+                        {model.size}
+                      </span>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--muted)', lineHeight: '1.4' }}>
+                      {model.description}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border)', paddingTop: '1.5rem' }}>
+            <h4 style={{
+              fontSize: '0.7rem',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              color: 'var(--muted)',
+              letterSpacing: '0.08em',
+              marginBottom: '1rem'
+            }}>
+              Keyboard Shortcuts
+            </h4>
+            <div
+              style={{
+                display: 'grid',
+                gap: '10px',
+                fontSize: '0.85rem',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--muted)' }}>Run Code</span>
+                <kbd style={{ background: '#21262d', color: 'var(--text)', padding: '3px 8px', fontSize: '11px', fontFamily: 'var(--font-mono)', borderRadius: '6px', border: '1px solid var(--border)' }}>Ctrl + Enter</kbd>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--muted)' }}>Upload File</span>
+                <kbd style={{ background: '#21262d', color: 'var(--text)', padding: '3px 8px', fontSize: '11px', fontFamily: 'var(--font-mono)', borderRadius: '6px', border: '1px solid var(--border)' }}>Ctrl + O</kbd>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--muted)' }}>Download File</span>
+                <kbd style={{ background: '#21262d', color: 'var(--text)', padding: '3px 8px', fontSize: '11px', fontFamily: 'var(--font-mono)', borderRadius: '6px', border: '1px solid var(--border)' }}>Ctrl + S</kbd>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ color: 'var(--muted)' }}>Vector Visualizer</span>
+                <kbd style={{ background: '#21262d', color: 'var(--text)', padding: '3px 8px', fontSize: '11px', fontFamily: 'var(--font-mono)', borderRadius: '6px', border: '1px solid var(--border)' }}>Ctrl + Shift + V</kbd>
+              </div>
+            </div>
+          </div>
         </div>
       );
     }
@@ -641,6 +754,8 @@ function App() {
           execution={execution}
           activeTab={activeTab}
           onTabChange={setActiveTab}
+          streamingFeedback={streamingFeedback}
+          isStreaming={isStreaming}
         />
       );
     }
@@ -918,6 +1033,29 @@ function App() {
           </div>
 
           <div className="actions">
+            <select
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              title="Select Semantic Debugger Model"
+              style={{
+                background: '#21262d',
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
+                borderRadius: '6px',
+                padding: '4px 8px',
+                fontSize: '12px',
+                outline: 'none',
+                cursor: 'pointer',
+                marginRight: '4px'
+              }}
+            >
+              {LOCAL_MODELS.map(m => (
+                <option key={m.id} value={m.id}>
+                  {m.name}
+                </option>
+              ))}
+            </select>
+
             <button
               className="run-button"
               onClick={handleRun}
