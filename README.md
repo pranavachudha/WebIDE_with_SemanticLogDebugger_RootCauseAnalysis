@@ -15,7 +15,7 @@ Install these before running the project:
 - Node.js 18+ and npm
 - Python 3.10+ recommended
 - Ollama
-- The Ollama model used by the backend: `qwen2.5-coder:1.5b`
+- The Ollama models used by the project: `qwen2.5-coder:1.5b`, `llama3.2:1b`, `phi4-mini:latest`
 - Sarvam API key for translating RCA output into Indian languages
 
 ## First-Time Setup
@@ -41,10 +41,12 @@ pip install -r requirements.txt
 cd ..
 ```
 
-Install/pull the local Ollama model:
+Install/pull the local Ollama models:
 
 ```bash
 ollama pull qwen2.5-coder:1.5b
+ollama pull llama3.2:1b
+ollama pull phi4-mini:latest
 ```
 
 ## Running the Project
@@ -97,6 +99,7 @@ http://localhost:3000
 5. The backend parses the traceback, retrieves similar historical bugs, runs root cause analysis, and asks the local Ollama model for developer feedback.
 6. The panel shows the symptom, root cause, recommended fix, evidence, developer fix plan, prevention checks, and debugging questions.
 7. After the LLM output finishes, use `Translate Generated RCA`, select an Indian language, and click `CONVERT`.
+8. You can change the AI model used for explanations at any time via the **Settings** panel in the IDE.
 
 ## Backend Endpoints
 
@@ -109,31 +112,23 @@ http://localhost:3000
 
 ## Ollama Notes
 
-The LLM feedback module is configured in:
+The LLM feedback module supports dynamically switching models via the IDE **Settings** panel.
 
-```text
-backend/llm/feedback_model.py
-```
+The pre-configured models are optimized for low-end machines:
 
-Current model:
+- `qwen2.5-coder:1.5b` (Extremely lightweight, default)
+- `llama3.2:1b` (Ultra-fast general reasoning)
+- `phi4-mini:latest` (Advanced instructions and code reasoning)
 
-```text
-qwen2.5-coder:1.5b
-```
-
-To use a different local Ollama model, update `OLLAMA_MODEL` in `backend/llm/feedback_model.py`, then pull that model:
+To use these models, you must pull them to your local Ollama instance:
 
 ```bash
-ollama pull <model-name>
+ollama pull qwen2.5-coder:1.5b
+ollama pull llama3.2:1b
+ollama pull phi4-mini:latest
 ```
 
-Examples:
-
-```bash
-ollama pull qwen2.5-coder:7b
-ollama pull deepseek-coder:6.7b
-ollama pull codellama:7b
-```
+If you wish to add different local Ollama models (e.g., `qwen2.5-coder:7b` or `deepseek-coder:6.7b`), you can update the `LOCAL_MODELS` array in `src/App.jsx` and pull the model in Ollama.
 
 Larger models usually give better feedback, but need more RAM and take longer to respond.
 
