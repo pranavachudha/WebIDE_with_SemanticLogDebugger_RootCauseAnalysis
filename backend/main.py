@@ -203,6 +203,28 @@ async def log_debug(request: LogDebugRequest):
         raise HTTPException(status_code=400, detail="Uploaded log file is empty.")
 
     error_details = parse_log_failure(request.log_text, request.filename)
+    parsed_log_text = error_details.get("parsed_log_text", request.log_text)
+
+    if error_details.get("no_error_detected"):
+        return {
+            "success": True,
+            "analysis_type": "log",
+            "filename": request.filename,
+            "error": error_details,
+            "log_excerpt": "",
+            "semantic_matches": [],
+            "query_embedding": [],
+            "root_cause_analysis": "No failure signatures found in the uploaded file.",
+            "suggested_fix": "Please upload a log file that contains an active exception or error message.",
+            "similarity_scores": [],
+            "rca": {
+                "summary": "No failure signatures found in the uploaded file.",
+                "suggested_fix": "Please upload a log file that contains an active exception or error message."
+            },
+            "parsed_log_text": parsed_log_text,
+            "no_error_detected": True,
+        }
+
     code_context = error_details.get("code_context", {})
     semantic_document = build_embedding_document(
         {
@@ -212,7 +234,7 @@ async def log_debug(request: LogDebugRequest):
             "failing_function": error_details.get("failing_function", "log"),
         },
         code_context,
-        request.log_text,
+        parsed_log_text,
     )
     query_embedding = generate_embedding(semantic_document)
     matches = get_similar_bugs(
@@ -240,6 +262,7 @@ async def log_debug(request: LogDebugRequest):
         "suggested_fix": rca_result["suggested_fix"],
         "similarity_scores": [match["score"] for match in matches],
         "rca": rca_result,
+        "parsed_log_text": parsed_log_text,
     }
 
 @app.get("/embeddings")
