@@ -167,7 +167,9 @@
         const TEST_FILES = [
             { id: '1', name: 'n_queens_recursion.py', content: 'def is_safe(board, row, col, n):\n    for i in range(col):\n        if board[row][i]: return False\n    return True\n\ndef solve(board, col, n):\n    if col >= n: return True\n    for i in range(n):\n        if is_safe(board, i, col, n):\n            # ROOT CAUSE: board is initialized with n-1 rows\n            board[i][col] = 1 \n            if solve(board, col + 1, n): return True\n            board[i][col] = 0\n    return False\n\nn = 4\nboard = [[0 for _ in range(n)] for _ in range(n-1)]\nsolve(board, 0, n)' },
             { id: '2', name: 'data_schema_audit.py', content: 'def process_user(user_data):\n    print(f"Auditing user: {user_data[\'id\']}")\n    # This key is missing in the second user\n    return user_data["metadata"]["last_login"]\n\nusers = [\n    {"id": 101, "metadata": {"last_login": "2024-05-01"}},\n    {"id": 102, "metadata": {}}\n]\n\nfor u in users:\n    process_user(u)' },
-            { id: '3', name: 'division_logic.py', content: 'def calculate_ratio(a, b):\n    return a / b\n\ndef process_set(val):\n    return calculate_ratio(val, 0)\n\nprocess_set(10)' }
+            { id: '3', name: 'division_logic.py', content: 'def calculate_ratio(a, b):\n    return a / b\n\ndef process_set(val):\n    return calculate_ratio(val, 0)\n\nprocess_set(10)' },
+            { id: '4', name: 'complex_call_stack_error.py', content: 'def process_data_level_5(data):\n    total = sum(data)\n    average = total / 0\n    return average\n\ndef process_data_level_4(data):\n    filtered_data = [x for x in data if x > 0]\n    return process_data_level_5(filtered_data)\n\ndef process_data_level_3(data):\n    normalized = [x * 10 for x in data]\n    return process_data_level_4(normalized)\n\ndef process_data_level_2(data):\n    cleaned = [x if x is not None else 0 for x in data]\n    return process_data_level_3(cleaned)\n\ndef process_data_level_1(data):\n    if not data:\n        return 0\n    return process_data_level_2(data)\n\ndef main():\n    raw_input_data = [1, 2, None, 4, -1, 5]\n    print("Starting data processing pipeline...")\n    result = process_data_level_1(raw_input_data)\n    print(f"Result: {result}")\n\nif __name__ == "__main__":\n    main()' },
+            { id: '5', name: 'oop_complex_error.py', content: 'class DatabaseConnector:\n    def __init__(self):\n        self.connected = False\n        \n    def connect(self):\n        self.connected = True\n        \n    def execute_query(self, query):\n        if not self.connected:\n            raise ConnectionError("Not connected to database")\n        return self._internal_execute(query)\n        \n    def _internal_execute(self, query):\n        parser = QueryParser()\n        return parser.parse_and_run(query)\n\nclass QueryParser:\n    def parse_and_run(self, query):\n        ast = self._build_ast(query)\n        executor = QueryExecutor()\n        return executor.run(ast)\n        \n    def _build_ast(self, query):\n        return {"type": "SELECT", "target": query.split()[1]}\n\nclass QueryExecutor:\n    def run(self, ast):\n        target = ast["target"]\n        return self._fetch_data(target)\n        \n    def _fetch_data(self, target):\n        return self._read_from_disk(target)\n        \n    def _read_from_disk(self, target):\n        data_block = "Block_"\n        block_id = None\n        result = data_block + block_id\n        return result\n\nclass Application:\n    def __init__(self):\n        self.db = DatabaseConnector()\n        \n    def run(self):\n        self.db.connect()\n        self.process_user_request()\n        \n    def process_user_request(self):\n        user_manager = UserManager(self.db)\n        user_manager.get_user_info("alice")\n\nclass UserManager:\n    def __init__(self, db):\n        self.db = db\n        \n    def get_user_info(self, username):\n        query = f"SELECT * FROM users WHERE username=\'{username}\'"\n        result = self.db.execute_query(query)\n        return result\n\ndef main():\n    app = Application()\n    app.run()\n\nif __name__ == "__main__":\n    main()' }
         ];
 
         const extractExceptionType = (msg) => {
@@ -624,7 +626,12 @@
         const loadFiles = () => {
             try {
                 const saved = localStorage.getItem('pyglide_workspace');
-                if (saved) return JSON.parse(saved);
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    const existingNames = new Set(parsed.map(f => f.name));
+                    const newFiles = TEST_FILES.filter(f => !existingNames.has(f.name)).map(f => ({...f, type: 'file', parentId: null}));
+                    return [...parsed, ...newFiles];
+                }
             } catch(e) {}
             return TEST_FILES.map(f => ({...f, type: 'file', parentId: null}));
         };
