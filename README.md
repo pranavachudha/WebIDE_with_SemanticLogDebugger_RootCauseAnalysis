@@ -107,7 +107,7 @@ The IDE also supports log-based debugging.
 
 1. Select the local Ollama model from the model dropdown.
 2. Click `LOG DEBUGGER` in the left sidebar.
-3. Upload a `.log`, `.txt`, `.out`, `.err`, or `.trace` file.
+3. Upload a `.log`, `.txt`, `.out`, `.err`, `.trace`, `.csv`, or `.xslx` file.
 4. The backend extracts the strongest traceback/error signal, runs semantic retrieval and RCA, then streams feedback from the selected Ollama model.
 5. The same RCA panel shows the log excerpt, root cause, fix plan, evidence, prevention checks, debugging questions, and translation controls.
 

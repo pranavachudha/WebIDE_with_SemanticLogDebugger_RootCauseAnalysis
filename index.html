@@ -1027,8 +1027,48 @@ except:
                 event.target.value = '';
                 if (!file) return;
 
-                const logText = await file.text();
-                if (!logText.trim()) {
+                const nameLower = file.name.toLowerCase();
+                const isExcel = nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls');
+
+                let logText = '';
+                try {
+                    if (isExcel) {
+                        logText = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => {
+                                const base64 = reader.result.split(',')[1];
+                                resolve(base64);
+                            };
+                            reader.onerror = (e) => reject(e);
+                            reader.readAsDataURL(file);
+                        });
+                    } else {
+                        logText = await file.text();
+                    }
+                } catch (readErr) {
+                    console.error("File reading error:", readErr);
+                    setRca({
+                        sourceType: 'log',
+                        logFilename: file.name,
+                        logExcerpt: '',
+                        frames: [{ line: 1, func: 'log', code: 'Error reading file.' }],
+                        rc: 0,
+                        rawMsg: '',
+                        feedback: null,
+                        llmLoading: false,
+                        mlError: `Error reading file: ${readErr.message || String(readErr)}`,
+                        streamText: '',
+                        ins: {
+                            title: 'Log Debugger',
+                            symptom: 'Failed to read file contents.',
+                            cause: 'A filesystem or permissions error occurred.',
+                            resolution: 'Try uploading the file again.'
+                        }
+                    });
+                    return;
+                }
+
+                if (!logText || !logText.trim()) {
                     setRca({
                         sourceType: 'log',
                         logFilename: file.name,
@@ -1044,7 +1084,7 @@ except:
                             title: 'Log Debugger',
                             symptom: 'No log content was available to inspect.',
                             cause: 'The selected file did not contain readable text.',
-                            resolution: 'Upload a .log, .txt, .out, .err, or .trace file that contains error output.'
+                            resolution: 'Upload a .log, .txt, .out, .err, .trace, .csv, or .xlsx file that contains error output.'
                         }
                     });
                     return;
@@ -1064,10 +1104,10 @@ except:
                 setRca({
                     sourceType: 'log',
                     logFilename: file.name,
-                    logExcerpt: logText.slice(0, 1600),
+                    logExcerpt: isExcel ? 'Excel binary sheet content (Base64)' : logText.slice(0, 1600),
                     frames: [{ line: 1, func: 'log', code: 'Scanning uploaded log for traceback and error signatures...' }],
                     rc: 0,
-                    rawMsg: logText,
+                    rawMsg: isExcel ? 'Excel binary sheet content (Base64)' : logText,
                     feedback: null,
                     llmLoading: true,
                     mlError: null,
@@ -1097,7 +1137,41 @@ except:
                         throw new Error(analysis.detail || `Log analysis failed: ${analysisResponse.status}`);
                     }
 
+                    if (analysis.no_error_detected) {
+                        setRca({
+                            sourceType: 'log',
+                            logFilename: file.name,
+                            logExcerpt: isExcel ? 'Excel binary sheet content (Base64)' : logText.slice(0, 1600),
+                            frames: [],
+                            rc: 0,
+                            rawMsg: analysis.parsed_log_text || logText,
+                            feedback: {
+                                headline: 'No errors detected',
+                                root_cause: 'The uploaded file does not contain any recognizable error tracebacks, exception signatures, or log severity markers (like ERROR or CRITICAL).',
+                                evidence: [
+                                    'Scanned all lines/cells for typical python tracebacks ("Traceback (most recent call last):").',
+                                    'Scanned all lines/cells for standard Exception/Error name patterns.',
+                                    'Scanned for severity level markers (ERROR, CRITICAL, FATAL, SEVERE).'
+                                ],
+                                fix_steps: [
+                                    'Ensure you are uploading the correct log file that captured the error event.',
+                                    'If this is a data spreadsheet (CSV/Excel), please note that the Log Debugger is designed to parse execution and system logs rather than standard tabular datasets.'
+                                ]
+                            },
+                            llmLoading: false,
+                            mlError: null,
+                            ins: {
+                                title: 'No Failure Signatures Found',
+                                symptom: 'The log/dataset was parsed successfully, but no error or exception signatures were identified.',
+                                cause: 'The file appears to be a healthy execution log or a standard data spreadsheet without runtime errors.',
+                                resolution: 'Please upload a log file that contains an active exception or error message.'
+                            }
+                        });
+                        return;
+                    }
+
                     const errorDetails = analysis.error || {};
+                    const parsedLogText = analysis.parsed_log_text || logText;
                     const stackFrames = Array.isArray(errorDetails.call_stack) && errorDetails.call_stack.length
                         ? errorDetails.call_stack.map((frame) => ({
                             line: frame.line_number || errorDetails.log_line_number || 1,
@@ -1114,10 +1188,10 @@ except:
                         ...(prev || {}),
                         sourceType: 'log',
                         logFilename: file.name,
-                        logExcerpt: analysis.log_excerpt || logText.slice(0, 1600),
+                        logExcerpt: analysis.log_excerpt || (isExcel ? 'Excel binary sheet content (Base64)' : logText.slice(0, 1600)),
                         frames: stackFrames,
                         rc: Math.max(0, stackFrames.length - 1),
-                        rawMsg: errorDetails.traceback || logText,
+                        rawMsg: errorDetails.traceback || parsedLogText,
                         parsedError: errorDetails,
                         semanticMatches: analysis.semantic_matches || [],
                         ins: {
@@ -1136,7 +1210,7 @@ except:
                             error: errorDetails,
                             rca: analysis.rca,
                             similar_bugs: analysis.semantic_matches || [],
-                            source_code: logText,
+                            source_code: parsedLogText,
                             model: selectedModel
                         })
                     });
@@ -1743,7 +1817,7 @@ except:
                         ref={logFileInputRef}
                         className="log-upload-input"
                         type="file"
-                        accept=".log,.txt,.out,.err,.trace"
+                        accept=".log,.txt,.out,.err,.trace,.csv,.xlsx,.xls"
                         onChange={handleLogFileUpload}
                     />
                     {view === 'stats' && <AnalyticsPanel onBack={()=>setView('editor')} />}
@@ -1761,12 +1835,12 @@ except:
                                 MODEL BENCHMARKS
                             </button>
                             <div style={{display:'flex', flexDirection:'column', gap:'4px', width:'100%'}}>
-                                <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>logFileInputRef.current?.click()} title="Upload a log file for root cause analysis (accepts .log, .txt, .out, .err, .trace)">
+                                <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>logFileInputRef.current?.click()} title="Upload a log file for root cause analysis (accepts .log, .txt, .out, .err, .trace, .csv, .xlsx)">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#facc15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
                                     LOG DEBUGGER
                                 </button>
                                 <span style={{fontSize:'0.6rem', color:'var(--text-dim)', paddingLeft:'28px', opacity:0.75, fontStyle:'italic'}}>
-                                    Accepts: .log, .txt, .out, .err, .trace
+                                    Accepts: .log, .txt, .out, .err, .trace, .csv, .xlsx
                                 </span>
                             </div>
                         </div>
