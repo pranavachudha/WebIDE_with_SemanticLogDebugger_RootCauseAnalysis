@@ -131,6 +131,8 @@ http://localhost:3000
 7. After the LLM output finishes, use `Translate Generated RCA`, select an Indian language, and click `CONVERT`.
 8. Change the local AI model using the model dropdown in the top toolbar. Pull the selected model in Ollama before using it.
 
+Sample failures are in `examples/`. Copy a script into the editor, or run it locally with a command such as `python examples/division_error.py`. These scripts intentionally raise errors for debugging demonstrations.
+
 ### Workspace panels
 
 - Toggle **Explorer**, **Console**, and **Analysis** from the toolbar. Hiding panels preserves their contents; **×** clears Analysis, while closing Console keeps its session.
@@ -247,36 +249,63 @@ If frontend does not open on the expected port:
 backend/
 ├── .env.example                 # Safe template for ignored local credentials
 ├── main.py                      # FastAPI app and API routes
+├── requirements.txt             # Backend dependencies
 ├── sarvam_translate.py          # Sarvam translation requests and key lookup
+├── embeddings/
+│   └── generator.py             # MiniLM/hash embeddings
+├── ingestion/
+│   ├── bugsinpy.py              # BugsInPy ingestion and startup seeding
+│   └── seed_bugs.json           # Eight bundled source bug records
 ├── llm/
 │   └── feedback_model.py        # Ollama-powered developer feedback module
-├── rca/
-│   └── engine.py                # Root cause analysis synthesis
 ├── parser/
 │   ├── traceback_parser.py      # Traceback and code-context extraction
 │   └── log_parser.py            # Uploaded log error extraction
+├── rca/
+│   └── engine.py                # Root cause analysis synthesis
 ├── runtime/
 │   └── executor.py              # Python subprocess execution
-├── vector_db/
-│   └── chroma_store.py          # Local vector store and semantic search
-└── ingestion/
-    ├── bugsinpy.py              # BugsInPy ingestion and startup seeding
-    └── seed_bugs.json           # Bundled source bug records (no embeddings)
+├── tests/
+│   └── test_repository_hygiene.py # Seed recovery and credential configuration tests
+└── vector_db/
+    └── chroma_store.py          # Local vector store and semantic search
 
-index.html                       # Active PyGlide interface and inline React application
-pyworker.js                      # Browser Python execution and REPL through Pyodide
-sw.js                            # Service worker for interactive Python input
+examples/                        # Intentionally failing Python demos
+├── attribute_error.py
+├── complex_call_stack_error.py
+├── division_error.py
+├── examples.py
+├── index.error.py
+├── key_error.py
+├── main.py
+├── name_error.py
+├── oop_complex_error.py
+└── type_error.py
 
 src/
 ├── workspace.css                # Active PyGlide panel layout and responsive styles
 ├── App.jsx                      # Separate React source implementation
+├── main.jsx                     # Entry point for the separate React implementation
+├── index.css                    # Styles for that implementation
 ├── components/
 │   └── RCAPanel.jsx             # RCA/feedback UI panel
-└── services/
-    └── api.ts                   # Frontend API client/types
+├── hooks/
+│   └── usePyodide.js            # Python runtime hook
+├── services/
+│   └── api.ts                   # Frontend API client/types
+└── utils/
+    └── rcaEngine.js             # RCA helpers
 
+.gitignore                       # Generated files, local credentials, and dependencies
+index.html                       # Active PyGlide interface and inline React application
+pyworker.js                      # Browser Python execution and REPL through Pyodide
+sw.js                            # Service worker for interactive Python input
 package.json                     # Frontend dependencies/scripts
+package-lock.json                # Locked frontend dependency versions
 vite.config.js                   # Vite server config
+postcss.config.js                # PostCSS configuration
+tailwind.config.js               # Tailwind configuration
+README.md                        # Setup and usage guide
 ```
 
 Generated vector indexes (`backend/chroma_data.json`, `backend/chroma/`) and saved API responses are ignored. Startup rebuilds the index from the eight bundled bug records; imported datasets and local credentials stay outside Git.
