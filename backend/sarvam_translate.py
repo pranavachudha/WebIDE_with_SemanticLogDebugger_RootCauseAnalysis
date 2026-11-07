@@ -1,22 +1,26 @@
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
+from dotenv import dotenv_values
 
 
-# Paste your Sarvam API key here if you do not want to use an environment variable.
-# Example: SARVAM_API_KEY = "sk_your_key_here"
-SARVAM_API_KEY = "sk_drgmd9lv_Pgdve1iCiieWfj2XGc6Jmrtg"
+# Credentials belong in the environment or the ignored backend/.env file.
 
 SARVAM_API_URL = "https://api.sarvam.ai/translate"
 SARVAM_TRANSLATE_MODEL = "sarvam-translate:v1"
 
 
 def translate_text(text: str, target_language_code: str) -> dict[str, Any]:
-    api_key = os.getenv("SARVAM_API_KEY") or SARVAM_API_KEY
+    api_key = (
+        os.getenv("SARVAM_API_KEY")
+        or dotenv_values(Path(__file__).with_name(".env")).get("SARVAM_API_KEY")
+        or ""
+    ).strip()
     if not api_key:
         raise ValueError(
-            "Sarvam API key is missing. Add it to backend/sarvam_translate.py "
+            "Sarvam API key is missing. Add it to backend/.env "
             "or set the SARVAM_API_KEY environment variable."
         )
 

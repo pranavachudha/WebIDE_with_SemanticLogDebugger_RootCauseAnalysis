@@ -54,7 +54,7 @@ Long project folder paths can break the PyTorch install on Windows, and pinned o
 ```powershell
 python -m venv E:\venvs\logdbg
 E:\venvs\logdbg\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-E:\venvs\logdbg\Scripts\python.exe -m pip install fastapi uvicorn pydantic sentence-transformers requests python-multipart scikit-learn httpx --only-binary=:all:
+E:\venvs\logdbg\Scripts\python.exe -m pip install fastapi uvicorn pydantic sentence-transformers requests python-multipart scikit-learn httpx python-dotenv --only-binary=:all:
 ```
 
 Notes:
@@ -186,7 +186,7 @@ $env:SARVAM_API_KEY = "your_key_here"
 python main.py
 ```
 
-Run from `backend/` with your environment's Python. In Bash, use `export SARVAM_API_KEY="your_key_here"`. The variable overrides the fallback in `backend/sarvam_translate.py`; restart the backend after changing it. Keep real keys out of committed files.
+Run from `backend/` with your environment's Python. In Bash, use `export SARVAM_API_KEY="your_key_here"`. Alternatively, copy `backend/.env.example` to `backend/.env` and enter the key there. The environment variable takes priority. Keep real keys out of committed files.
 
 The translation feature uses:
 
@@ -217,7 +217,7 @@ If pip fails with a long path error or asks for Microsoft Visual C++ Build Tools
 
 If translation says the Sarvam API key is missing or returns `invalid_api_key_error`:
 
-- Set a valid Sarvam key in the backend terminal's `SARVAM_API_KEY` environment variable. A stale environment variable overrides the source fallback.
+- Set a valid Sarvam key in `backend/.env` or the backend terminal's `SARVAM_API_KEY` environment variable. A stale environment variable overrides `.env`.
 - Stop and restart the backend after setting the key.
 - Refresh the frontend with `Ctrl + F5`.
 
@@ -245,6 +245,7 @@ If frontend does not open on the expected port:
 
 ```text
 backend/
+├── .env.example                 # Safe template for ignored local credentials
 ├── main.py                      # FastAPI app and API routes
 ├── sarvam_translate.py          # Sarvam translation requests and key lookup
 ├── llm/
@@ -259,7 +260,8 @@ backend/
 ├── vector_db/
 │   └── chroma_store.py          # Local vector store and semantic search
 └── ingestion/
-    └── bugsinpy.py              # BugsInPy ingestion utilities
+    ├── bugsinpy.py              # BugsInPy ingestion and startup seeding
+    └── seed_bugs.json           # Bundled source bug records (no embeddings)
 
 index.html                       # Active PyGlide interface and inline React application
 pyworker.js                      # Browser Python execution and REPL through Pyodide
@@ -276,6 +278,8 @@ src/
 package.json                     # Frontend dependencies/scripts
 vite.config.js                   # Vite server config
 ```
+
+Generated vector indexes (`backend/chroma_data.json`, `backend/chroma/`) and saved API responses are ignored. Startup rebuilds the index from the eight bundled bug records; imported datasets and local credentials stay outside Git.
 
 ## Technologies Used
 

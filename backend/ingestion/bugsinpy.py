@@ -167,50 +167,26 @@ def ingest_bugsinpy_dataset(dataset_path: str, limit: int | None = 150, run_test
 
 
 def ingest_mock_data():
-    """
-    Since cloning and processing the full BugsInPy dataset takes a long time,
-    we'll start by ingesting a few mock samples based on common patterns.
-    """
-    mock_bugs = [
-        {
-            "exception_type": "ModuleNotFoundError",
-            "traceback_str": "Traceback (most recent call last):\n  File \"test.py\", line 1, in <module>\n    import numpy as np\nModuleNotFoundError: No module named 'numpy'",
-            "buggy_code": "import numpy as np\n\ndef calculate():\n    return np.array([1, 2, 3])",
-            "fixed_code": "# Run pip install numpy\nimport numpy as np\n\ndef calculate():\n    return np.array([1, 2, 3])",
-            "rca_summary": "The environment was missing the 'numpy' package. Fixed by adding numpy to requirements and installing it."
-        },
-        {
-            "exception_type": "AttributeError",
-            "traceback_str": "Traceback (most recent call last):\n  File \"test.py\", line 5, in <module>\n    result = process_data(None)\n  File \"test.py\", line 2, in process_data\n    data.append(1)\nAttributeError: 'NoneType' object has no attribute 'append'",
-            "buggy_code": "def process_data(data):\n    data.append(1)\n    return data\n\nresult = process_data(None)",
-            "fixed_code": "def process_data(data):\n    if data is None:\n        data = []\n    data.append(1)\n    return data\n\nresult = process_data(None)",
-            "rca_summary": "A null reference (None) was passed to a function expecting a list. Fixed by adding a null check and initializing an empty list."
-        },
-        {
-            "exception_type": "IndexError",
-            "traceback_str": "Traceback (most recent call last):\n  File \"test.py\", line 3, in <module>\n    print(my_list[5])\nIndexError: list index out of range",
-            "buggy_code": "my_list = [1, 2, 3]\n\nprint(my_list[5])",
-            "fixed_code": "my_list = [1, 2, 3]\n\nif len(my_list) > 5:\n    print(my_list[5])",
-            "rca_summary": "Attempted to access an index beyond the bounds of the list. Fixed by adding a bounds check."
-        }
-    ]
-    
-    print("Ingesting curated semantic debugger seed bugs...")
-    for index, bug in enumerate(mock_bugs, start=1):
-        bug_id = f"semantic-seed-{index}-{bug['exception_type']}"
+    """Rebuild bundled historical and curated bug records with fresh embeddings."""
+    seed_path = Path(__file__).with_name("seed_bugs.json")
+    records = json.loads(seed_path.read_text(encoding="utf-8"))
+
+    print("Ingesting bundled semantic debugger seed bugs...")
+    for bug in records:
         add_bug_to_db(
-            bug_id=bug_id,
+            bug_id=bug["bug_id"],
             exception_type=bug["exception_type"],
-            traceback_str=bug["traceback_str"],
-            buggy_code=bug["buggy_code"],
-            fixed_code=bug["fixed_code"],
-            rca_summary=bug["rca_summary"],
-            project="semantic-debugger-seed",
-            patch=f"--- buggy\n+++ fixed\n{bug['fixed_code']}",
+            traceback_str=bug.get("stack_trace", ""),
+            buggy_code=bug.get("buggy_code", ""),
+            fixed_code=bug.get("fixed_code", ""),
+            rca_summary=bug.get("rca_summary", ""),
+            patch=bug.get("patch", ""),
+            project=bug.get("project", ""),
+            failing_function=bug.get("failing_function", ""),
+            imports=bug.get("imports", []),
+            file_path=bug.get("file_path", ""),
         )
-        print(f"Ingested {bug['exception_type']} bug.")
-        
-    print("Ingestion complete!")
+    print(f"Ingested {len(records)} bundled bug records.")
 
 if __name__ == "__main__":
     default_dataset = os.path.join(os.path.dirname(__file__), "..", "..", "dataset", "BugsInPy")

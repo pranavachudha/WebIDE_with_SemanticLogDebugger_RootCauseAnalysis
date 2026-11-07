@@ -1,0 +1,112 @@
+[
+  {
+    "bug_id": "ansible-1",
+    "project": "ansible",
+    "exception_type": "RuntimeError",
+    "rca_summary": "Patch indicates a missing None guard or null value propagation before an operation.",
+    "buggy_code": "",
+    "fixed_code": "                            if not os.path.isfile(os.path.join(to_text(b_search_path, errors='surrogate_or_strict'), 'MANIFEST.json')):\n                                raise AnsibleError(\n                                    message=\"Collection %s does not appear to have a MANIFEST.json. \" % collection_name +\n                                            \"A MANIFEST.json is expected if the collection has been built and installed via ansible-galaxy.\"\n                                )",
+    "patch": "diff --git a/lib/ansible/galaxy/collection.py b/lib/ansible/galaxy/collection.py\nindex a055b08e71..856e54666f 100644\n--- a/lib/ansible/galaxy/collection.py\n+++ b/lib/ansible/galaxy/collection.py\n@@ -668,6 +668,11 @@ def verify_collections(collections, search_paths, apis, validate_certs, ignore_e\n                     for search_path in search_paths:\n                         b_search_path = to_bytes(os.path.join(search_path, namespace, name), errors='surrogate_or_strict')\n                         if os.path.isdir(b_search_path):\n+                            if not os.path.isfile(os.path.join(to_text(b_search_path, errors='surrogate_or_strict'), 'MANIFEST.json')):\n+                                raise AnsibleError(\n+                                    message=\"Collection %s does not appear to have a MANIFEST.json. \" % collection_name +\n+                                            \"A MANIFEST.json is expected if the collection has been built and installed via ansible-galaxy.\"\n+                                )\n                             local_collection = CollectionRequirement.from_path(b_search_path, False)\n                             break\n                     if local_collection is None:\n",
+    "failing_function": "",
+    "imports": [],
+    "file_path": "lib/ansible/galaxy/collection.py",
+    "stack_trace": ""
+  },
+  {
+    "bug_id": "ansible-10",
+    "project": "ansible",
+    "exception_type": "RuntimeError",
+    "rca_summary": "Patch indicates a missing None guard or null value propagation before an operation.",
+    "buggy_code": "                    current_line.next.prev = current_line.prev",
+    "fixed_code": "        self.prev = None\n        self.next = None\n                    if current_line.next is not None:\n                        current_line.next.prev = current_line.prev",
+    "patch": "diff --git a/lib/ansible/modules/system/pamd.py b/lib/ansible/modules/system/pamd.py\nindex 0d8e32b5ae..50da1fcf9e 100644\n--- a/lib/ansible/modules/system/pamd.py\n+++ b/lib/ansible/modules/system/pamd.py\n@@ -351,6 +351,8 @@ class PamdRule(PamdLine):\n     valid_control_actions = ['ignore', 'bad', 'die', 'ok', 'done', 'reset']\n \n     def __init__(self, rule_type, rule_control, rule_path, rule_args=None):\n+        self.prev = None\n+        self.next = None\n         self._control = None\n         self._args = None\n         self.rule_type = rule_type\n@@ -478,7 +480,8 @@ class PamdService(object):\n             if current_line.matches(rule_type, rule_control, rule_path):\n                 if current_line.prev is not None:\n                     current_line.prev.next = current_line.next\n-                    current_line.next.prev = current_line.prev\n+                    if current_line.next is not None:\n+                        current_line.next.prev = current_line.prev\n                 else:\n                     self._head = current_line.next\n                     current_line.next.prev = None\n",
+    "failing_function": "",
+    "imports": [],
+    "file_path": "lib/ansible/modules/system/pamd.py",
+    "stack_trace": ""
+  },
+  {
+    "bug_id": "ansible-11",
+    "project": "ansible",
+    "exception_type": "ImportError",
+    "rca_summary": "Import/dependency behavior changed; fixes commonly adjust module resolution, optional dependencies, or exported names.",
+    "buggy_code": "from ansible.module_utils.connection import exec_command\nfrom ansible.module_utils.network.ios.ios import load_config\nimport re\n            banner_cmd += want['text'].strip()\n    rc, out, err = exec_command(module, 'show banner %s' % module.params['banner'])\n    if rc == 0:\n        output = out\n    else:\n        rc, out, err = exec_command(module,\n                                    'show running-config | begin banner %s'\n                                    % module.params['banner'])\n        if out:\n            output = re.search(r'\\^C(.*?)\\^C', out, re.S).group(1).strip()\n    if text:\n        text = str(text).strip()\n",
+    "fixed_code": "from ansible.module_utils.network.ios.ios import get_config, load_config\nfrom re import search, M\n            banner_cmd += want['text'].strip('\\n')\n    \"\"\"\n    This function gets the banner config without stripping any whitespaces,\n    and then fetches the required banner from it.\n    :param module:\n    :return: banner config dict object.\n    \"\"\"\n    out = get_config(module, flags='| begin banner %s' % module.params['banner'])\n    if out:\n        regex = 'banner ' + module.params['banner'] + ' ^C\\n'\n        if search('banner ' + module.params['banner'], out, M):\n            output = str((out.split(regex))[1].split(\"^C\\n\")[0])\n    else:\n        output = None",
+    "patch": "diff --git a/lib/ansible/modules/network/ios/ios_banner.py b/lib/ansible/modules/network/ios/ios_banner.py\nindex be85781058..c28838407c 100644\n--- a/lib/ansible/modules/network/ios/ios_banner.py\n+++ b/lib/ansible/modules/network/ios/ios_banner.py\n@@ -89,10 +89,9 @@ commands:\n     - string\n \"\"\"\n from ansible.module_utils.basic import AnsibleModule\n-from ansible.module_utils.connection import exec_command\n-from ansible.module_utils.network.ios.ios import load_config\n+from ansible.module_utils.network.ios.ios import get_config, load_config\n from ansible.module_utils.network.ios.ios import ios_argument_spec\n-import re\n+from re import search, M\n \n \n def map_obj_to_commands(updates, module):\n@@ -107,7 +106,7 @@ def map_obj_to_commands(updates, module):\n         if want['text'] and (want['text'] != have.get('text')):\n             banner_cmd = 'banner %s' % module.params['banner']\n             banner_cmd += ' @\\n'\n-            banner_cmd += want['text'].strip()\n+            banner_cmd += want['text'].strip('\\n')\n             banner_cmd += '\\n@'\n             commands.append(banner_cmd)\n \n@@ -115,17 +114,21 @@ def map_obj_to_commands(updates, module):\n \n \n def map_config_to_obj(module):\n-    rc, out, err = exec_command(module, 'show banner %s' % module.params['banner'])\n-    if rc == 0:\n-        output = out\n-    else:\n-        rc, out, err = exec_command(module,\n-                                    'show running-config | begin banner %s'\n-                                    % module.params['banner'])\n-        if out:\n-            output = re.search(r'\\^C(.*?)\\^C', out, re.S).group(1).strip()\n+    \"\"\"\n+    This function gets the banner config without stripping any whitespaces,\n+    and then fetches the required banner from it.\n+    :param module:\n+    :return: banner config dict object.\n+    \"\"\"\n+    out = get_config(module, flags='| begin banner %s' % module.params['banner'])\n+    if out:\n+        regex = 'banner ' + module.params['banner'] + ' ^C\\n'\n+        if search('banner ' + module.params['banner'], out, M):\n+            output = str((out.split(regex))[1].split(\"^C\\n\")[0])\n         else:\n             output = None\n+    else:\n+        output = None\n     obj = {'banner': module.params['banner'], 'state': 'absent'}\n     if output:\n         obj['text'] = output\n@@ -135,9 +138,6 @@ def map_config_to_obj(module):\n \n def map_params_to_obj(module):\n     text = module.params['text']\n-    if text:\n-        text = str(text).strip()\n-\n     return {\n         'banner': module.params['banner'],\n         'text': text,\n",
+    "failing_function": "",
+    "imports": [
+      "from ansible.module_utils.connection import exec_command",
+      "from ansible.module_utils.network.ios.ios import load_config",
+      "import re"
+    ],
+    "file_path": "lib/ansible/modules/network/ios/ios_banner.py",
+    "stack_trace": ""
+  },
+  {
+    "bug_id": "ansible-12",
+    "project": "ansible",
+    "exception_type": "ImportError",
+    "rca_summary": "Import/dependency behavior changed; fixes commonly adjust module resolution, optional dependencies, or exported names.",
+    "buggy_code": "import os\n\n            ret.append(os.getenv(var, ''))",
+    "fixed_code": "from ansible.utils import py3compat\n            ret.append(py3compat.environ.get(var, ''))",
+    "patch": "diff --git a/lib/ansible/plugins/lookup/env.py b/lib/ansible/plugins/lookup/env.py\nindex 6892feb8c5..5926bfeea4 100644\n--- a/lib/ansible/plugins/lookup/env.py\n+++ b/lib/ansible/plugins/lookup/env.py\n@@ -27,9 +27,8 @@ RETURN = \"\"\"\n       - values from the environment variables.\n     type: list\n \"\"\"\n-import os\n-\n from ansible.plugins.lookup import LookupBase\n+from ansible.utils import py3compat\n \n \n class LookupModule(LookupBase):\n@@ -39,6 +38,6 @@ class LookupModule(LookupBase):\n         ret = []\n         for term in terms:\n             var = term.split()[0]\n-            ret.append(os.getenv(var, ''))\n+            ret.append(py3compat.environ.get(var, ''))\n \n         return ret\n",
+    "failing_function": "",
+    "imports": [
+      "import os"
+    ],
+    "file_path": "lib/ansible/plugins/lookup/env.py",
+    "stack_trace": ""
+  },
+  {
+    "bug_id": "ansible-13",
+    "project": "ansible",
+    "exception_type": "ImportError",
+    "rca_summary": "Import/dependency behavior changed; fixes commonly adjust module resolution, optional dependencies, or exported names.",
+    "buggy_code": "                    name, dummy, requirement = collection_input.partition(':')\n    elif urlparse(collection).scheme:\n        b_tar_path = _download_file(collection, b_temp_path, None, validate_certs)",
+    "fixed_code": "from ansible.module_utils import six\nurlparse = six.moves.urllib.parse.urlparse\n                    requirement = None\n                    if os.path.isfile(to_bytes(collection_input, errors='surrogate_or_strict')) or \\\n                            urlparse(collection_input).scheme.lower() in ['http', 'https']:\n                        # Arg is a file path or URL to a collection\n                        name = collection_input\n                    else:\n                        name, dummy, requirement = collection_input.partition(':')\n    elif urlparse(collection).scheme.lower() in ['http', 'https']:\n        try:\n            b_tar_path = _download_file(collection, b_temp_path, None, validate_certs)\n        except urllib_error.URLError as err:\n            raise AnsibleError(\"Failed to download collection tar from '%s': %s\"\n                               % (to_native(collection), to_native(err)))",
+    "patch": "diff --git a/lib/ansible/cli/galaxy.py b/lib/ansible/cli/galaxy.py\nindex 487f21d0db..9cf3a8e87e 100644\n--- a/lib/ansible/cli/galaxy.py\n+++ b/lib/ansible/cli/galaxy.py\n@@ -29,12 +29,14 @@ from ansible.galaxy.role import GalaxyRole\n from ansible.galaxy.token import BasicAuthToken, GalaxyToken, KeycloakToken, NoTokenSentinel\n from ansible.module_utils.ansible_release import __version__ as ansible_version\n from ansible.module_utils._text import to_bytes, to_native, to_text\n+from ansible.module_utils import six\n from ansible.parsing.yaml.loader import AnsibleLoader\n from ansible.playbook.role.requirement import RoleRequirement\n from ansible.utils.display import Display\n from ansible.utils.plugin_docs import get_versioned_doclink\n \n display = Display()\n+urlparse = six.moves.urllib.parse.urlparse\n \n \n class GalaxyCLI(CLI):\n@@ -805,7 +807,13 @@ class GalaxyCLI(CLI):\n             else:\n                 requirements = []\n                 for collection_input in collections:\n-                    name, dummy, requirement = collection_input.partition(':')\n+                    requirement = None\n+                    if os.path.isfile(to_bytes(collection_input, errors='surrogate_or_strict')) or \\\n+                            urlparse(collection_input).scheme.lower() in ['http', 'https']:\n+                        # Arg is a file path or URL to a collection\n+                        name = collection_input\n+                    else:\n+                        name, dummy, requirement = collection_input.partition(':')\n                     requirements.append((name, requirement or '*', None))\n \n             output_path = GalaxyCLI._resolve_path(output_path)\ndiff --git a/lib/ansible/galaxy/collection.py b/lib/ansible/galaxy/collection.py\nindex 0569605a3d..ede9492251 100644\n--- a/lib/ansible/galaxy/collection.py\n+++ b/lib/ansible/galaxy/collection.py\n@@ -827,9 +827,13 @@ def _get_collection_info(dep_map, existing_collections, collection, requirement,\n     if os.path.isfile(to_bytes(collection, errors='surrogate_or_strict')):\n         display.vvvv(\"Collection requirement '%s' is a tar artifact\" % to_text(collection))\n         b_tar_path = to_bytes(collection, errors='surrogate_or_strict')\n-    elif urlparse(collection).scheme:\n+    elif urlparse(collection).scheme.lower() in ['http', 'https']:\n         display.vvvv(\"Collection requirement '%s' is a URL to a tar artifact\" % collection)\n-        b_tar_path = _download_file(collection, b_temp_path, None, validate_certs)\n+        try:\n+            b_tar_path = _download_file(collection, b_temp_path, None, validate_certs)\n+        except urllib_error.URLError as err:\n+            raise AnsibleError(\"Failed to download collection tar from '%s': %s\"\n+                               % (to_native(collection), to_native(err)))\n \n     if b_tar_path:\n         req = CollectionRequirement.from_tar(b_tar_path, force, parent=parent)\n",
+    "failing_function": "",
+    "imports": [],
+    "file_path": "lib/ansible/cli/galaxy.py",
+    "stack_trace": ""
+  },
+  {
+    "bug_id": "semantic-seed-1-ModuleNotFoundError",
+    "project": "semantic-debugger-seed",
+    "exception_type": "ModuleNotFoundError",
+    "rca_summary": "The environment was missing the 'numpy' package. Fixed by adding numpy to requirements and installing it.",
+    "buggy_code": "import numpy as np\n\ndef calculate():\n    return np.array([1, 2, 3])",
+    "fixed_code": "# Run pip install numpy\nimport numpy as np\n\ndef calculate():\n    return np.array([1, 2, 3])",
+    "patch": "--- buggy\n+++ fixed\n# Run pip install numpy\nimport numpy as np\n\ndef calculate():\n    return np.array([1, 2, 3])",
+    "failing_function": "",
+    "imports": [],
+    "file_path": "",
+    "stack_trace": "Traceback (most recent call last):\n  File \"test.py\", line 1, in <module>\n    import numpy as np\nModuleNotFoundError: No module named 'numpy'"
+  },
+  {
+    "bug_id": "semantic-seed-2-AttributeError",
+    "project": "semantic-debugger-seed",
+    "exception_type": "AttributeError",
+    "rca_summary": "A null reference (None) was passed to a function expecting a list. Fixed by adding a null check and initializing an empty list.",
+    "buggy_code": "def process_data(data):\n    data.append(1)\n    return data\n\nresult = process_data(None)",
+    "fixed_code": "def process_data(data):\n    if data is None:\n        data = []\n    data.append(1)\n    return data\n\nresult = process_data(None)",
+    "patch": "--- buggy\n+++ fixed\ndef process_data(data):\n    if data is None:\n        data = []\n    data.append(1)\n    return data\n\nresult = process_data(None)",
+    "failing_function": "",
+    "imports": [],
+    "file_path": "",
+    "stack_trace": "Traceback (most recent call last):\n  File \"test.py\", line 5, in <module>\n    result = process_data(None)\n  File \"test.py\", line 2, in process_data\n    data.append(1)\nAttributeError: 'NoneType' object has no attribute 'append'"
+  },
+  {
+    "bug_id": "semantic-seed-3-IndexError",
+    "project": "semantic-debugger-seed",
+    "exception_type": "IndexError",
+    "rca_summary": "Attempted to access an index beyond the bounds of the list. Fixed by adding a bounds check.",
+    "buggy_code": "my_list = [1, 2, 3]\n\nprint(my_list[5])",
+    "fixed_code": "my_list = [1, 2, 3]\n\nif len(my_list) > 5:\n    print(my_list[5])",
+    "patch": "--- buggy\n+++ fixed\nmy_list = [1, 2, 3]\n\nif len(my_list) > 5:\n    print(my_list[5])",
+    "failing_function": "",
+    "imports": [],
+    "file_path": "",
+    "stack_trace": "Traceback (most recent call last):\n  File \"test.py\", line 3, in <module>\n    print(my_list[5])\nIndexError: list index out of range"
+  }
+]
