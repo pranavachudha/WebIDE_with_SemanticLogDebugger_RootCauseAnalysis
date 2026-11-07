@@ -1,37 +1,8 @@
 # PyGlide — Python Web IDE with Semantic Log Debugging & Root Cause Analysis
 
-**PyGlide** is a browser-based Python development environment that brings code editing, execution, an interactive console, and root cause analysis (RCA) into one workspace. It helps developers investigate failures through traceback visualization, semantic retrieval of historical bug patterns, and explanations from a local Ollama model.
+**PyGlide** is a web-based Python IDE with code execution, an interactive console, semantic log debugging, root cause analysis (RCA), historical bug matching, and local AI feedback through Ollama.
 
-This repository contains the **WebIDE with Semantic Log Debugger & Root Cause Analysis** project, presented in the application as **PyGlide**.
-
-## What PyGlide Offers
-
-- **Python editor and workspace:** Monaco Editor with syntax highlighting, file and folder management, multiple editor tabs, browser-saved workspace contents, and ZIP export.
-- **Browser-based execution:** Run Python in a Pyodide web worker and inspect output or enter commands in the Xterm.js console and REPL.
-- **Root cause analysis:** Extract Python traceback frames, display the execution trace, and use PageRank over the trace graph to select a candidate root-cause frame.
-- **Semantic debugging:** Retrieve related historical bug patterns from the backend vector store to provide context for diagnosis and repair suggestions.
-- **Local AI feedback:** Stream diagnosis, evidence, fix steps, prevention checks, and debugging questions from a selected Ollama model.
-- **Log debugging:** Upload text logs or structured CSV/Excel logs to inspect detected error signals through the same analysis panel.
-- **Indian-language translation:** Translate generated English RCA explanations using the optional Sarvam Translate integration.
-- **Flexible workspace panels:** Resize, hide, and reopen Explorer, Console, and Analysis; maximize the console; and retain analysis while moving between files.
-- **Learning views:** Inspect recorded error categories through Programmer Focus and view the included model comparison information under Model Benchmarks.
-
-## Language Support and Scope
-
-PyGlide currently supports **Python code execution and debugging**. The browser runtime uses Pyodide, the backend executor runs Python, and the source-context and traceback parsers are designed around Python. Historical retrieval includes BugsInPy-style Python bug records and curated patterns.
-
-The Log Debugger can also recognize generic severity markers and exception messages in other logs. This does not provide full execution or structured debugging support for JavaScript, Java, C++, or other languages.
-
-Python packages and operating-system features available in the browser depend on the Pyodide environment. AI explanations and graph-selected frames are diagnostic suggestions to review against the actual code. The Model Benchmarks view contains predefined comparison information, rather than measurements from the current machine.
-
-## How PyGlide Works
-
-1. **Edit and run:** Write Python in Monaco Editor. The active IDE sends the code to a Pyodide worker, which reports output and execution errors to the console.
-2. **Inspect the failure:** PyGlide extracts traceback frames and builds a trace graph for the RCA panel. The backend adds parsed error context, semantic bug retrieval, and rule-based RCA.
-3. **Generate an explanation:** The selected local Ollama model uses the error, source context, RCA, and retrieved matches to stream developer feedback.
-4. **Review and translate:** Read the explanation and execution trace, update the code, and optionally translate the generated feedback through Sarvam.
-
-Uploaded logs enter through the backend log parser and then use the same retrieval and feedback pipeline. The backend also exposes a separate `/execute` endpoint for Python subprocess execution.
+It includes a multi-file workspace, resizable panels, traceback visualization, and optional Indian-language RCA translation through Sarvam. Code execution and structured debugging currently support **Python**.
 
 PyGlide uses three local services:
 
@@ -49,7 +20,7 @@ Install these before running the project:
 - The Ollama models used by the project: `qwen2.5-coder:1.5b`, `llama3.2:1b`, `phi4-mini:latest`
 - Sarvam API key (optional, required only for translating RCA output into Indian languages)
 
-The current frontend loads React, Monaco, Pyodide, and other browser assets from CDNs, so an internet connection is needed to load those resources. Ollama feedback runs locally; translation calls Sarvam's external API.
+Internet access is needed for CDN assets and optional Sarvam translation; Ollama feedback runs locally.
 
 ## First-Time Setup
 
@@ -74,13 +45,7 @@ pip install -r requirements.txt
 cd ..
 ```
 
-For Excel log uploads, also install the optional spreadsheet readers in the same Python environment:
-
-```bash
-pip install pandas openpyxl
-```
-
-Legacy `.xls` uploads additionally require `xlrd`.
+For Excel logs, also run `pip install pandas openpyxl` in the same environment; `.xls` files additionally require `xlrd`.
 
 ### Windows setup (recommended if pip fails with long path or build errors)
 
@@ -168,12 +133,10 @@ http://localhost:3000
 
 ### Workspace panels
 
-- Use **Explorer**, **Console**, and **Analysis** in the top toolbar to hide or reopen each panel. Hiding analysis preserves the current result; closing it with **×** clears the result. Closing the console preserves its output and REPL session.
-- Switching tabs, closing a file tab, or editing code keeps the last analysis available. Running a file again clears the previous analysis and generates a new result if execution fails.
-- Drag the analysis panel's left edge or the console's top edge to resize. Double-click an edge to reset its size, or focus it and use the arrow keys.
-- Use the console's chevron to maximize it or restore its previous size. **Reset panel layout** in the toolbar restores the default arrangement.
-- Shortcuts: `Ctrl+B` toggles Explorer, `Ctrl+J` toggles Console, and `Ctrl+Alt+A` toggles Analysis. On macOS, use Command in place of Ctrl.
-- Panel sizes and visibility are saved in this browser. On smaller windows, analysis opens over the editor to keep its contents readable.
+- Toggle **Explorer**, **Console**, and **Analysis** from the toolbar. Hiding panels preserves their contents; **×** clears Analysis, while closing Console keeps its session.
+- RCA survives file switches and edits until Analysis is closed or a file runs again.
+- Drag panel edges to resize, use the console chevron to maximize/restore, or select **Reset panel layout**. Sizes and visibility are saved locally.
+- Shortcuts: `Ctrl+B` Explorer, `Ctrl+J` Console, `Ctrl+Alt+A` Analysis. Use Command instead of Ctrl on macOS.
 
 ## Log Debugger
 
@@ -206,15 +169,9 @@ The configured local model options are:
 - `llama3.2:1b` (general reasoning option)
 - `phi4-mini:latest` (additional reasoning option)
 
-To use these models, you must pull them to your local Ollama instance:
+Pull the selected model with `ollama pull <model-name>` as shown in setup.
 
-```bash
-ollama pull qwen2.5-coder:1.5b
-ollama pull llama3.2:1b
-ollama pull phi4-mini:latest
-```
-
-To expose another installed Ollama model in the active IDE, update the `LOCAL_MODELS` array in `index.html` and pull that model in Ollama. The separate React source implementation also has a model list in `src/App.jsx`.
+To add a model to the active IDE, update `LOCAL_MODELS` in `index.html` and pull it in Ollama.
 
 Response time and feedback quality depend on the selected model, available memory, hardware, and error context.
 
@@ -229,14 +186,7 @@ $env:SARVAM_API_KEY = "your_key_here"
 python main.py
 ```
 
-Run these commands from `backend/`, using your virtual environment's Python executable if applicable. For Bash:
-
-```bash
-export SARVAM_API_KEY="your_key_here"
-python main.py
-```
-
-The environment variable takes priority over the fallback value in `backend/sarvam_translate.py`. Keep real keys out of committed source files. Restart the backend after changing the source fallback or setting the environment variable in its launch terminal.
+Run from `backend/` with your environment's Python. In Bash, use `export SARVAM_API_KEY="your_key_here"`. The variable overrides the fallback in `backend/sarvam_translate.py`; restart the backend after changing it. Keep real keys out of committed files.
 
 The translation feature uses:
 
