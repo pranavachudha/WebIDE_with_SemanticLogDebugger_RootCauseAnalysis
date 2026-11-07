@@ -129,9 +129,16 @@
         .btn-secondary:hover { background: #333; }
         
         .logo { font-size: 0.85rem; font-weight: 900; letter-spacing: 2px; color: var(--accent); margin-bottom: 3rem; padding-left: 10px; }
-        .file-item { padding: 10px 16px; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; border-radius: 6px; transition: all 0.2s; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; font-weight: 500; }
+        .file-item { padding: 10px 16px; font-size: 0.8rem; color: var(--text-dim); cursor: pointer; border-radius: 6px; transition: all 0.2s; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; font-weight: 500; overflow: hidden; }
+        .file-name-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; }
         .file-item:hover { background: rgba(255, 255, 255, 0.03); color: var(--text); }
         .file-item.active { background: var(--accent-dim); color: var(--accent); font-weight: 600; border-left: 3px solid var(--accent); border-radius: 0 6px 6px 0; }
+        
+        .context-menu { position: fixed; background: rgba(20, 20, 22, 0.98); border: 1px solid var(--border); backdrop-filter: blur(20px); box-shadow: 0 10px 30px rgba(0,0,0,0.5); border-radius: 8px; padding: 6px; z-index: 9999; display: flex; flex-direction: column; min-width: 180px; }
+        .context-menu-item { padding: 8px 12px; font-size: 0.8rem; color: var(--text); cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 10px; transition: background 0.1s; }
+        .context-menu-item:hover { background: var(--accent-dim); color: var(--accent); }
+        .context-menu-item.danger:hover { background: rgba(239, 68, 68, 0.15); color: var(--error); }
+        .context-menu-divider { height: 1px; background: var(--border); margin: 4px 0; }
         
         .stats-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 200; padding: 4rem; overflow-y: auto; backdrop-filter: blur(40px); }
     </style>
@@ -167,7 +174,9 @@
         const TEST_FILES = [
             { id: '1', name: 'n_queens_recursion.py', content: 'def is_safe(board, row, col, n):\n    for i in range(col):\n        if board[row][i]: return False\n    return True\n\ndef solve(board, col, n):\n    if col >= n: return True\n    for i in range(n):\n        if is_safe(board, i, col, n):\n            # ROOT CAUSE: board is initialized with n-1 rows\n            board[i][col] = 1 \n            if solve(board, col + 1, n): return True\n            board[i][col] = 0\n    return False\n\nn = 4\nboard = [[0 for _ in range(n)] for _ in range(n-1)]\nsolve(board, 0, n)' },
             { id: '2', name: 'data_schema_audit.py', content: 'def process_user(user_data):\n    print(f"Auditing user: {user_data[\'id\']}")\n    # This key is missing in the second user\n    return user_data["metadata"]["last_login"]\n\nusers = [\n    {"id": 101, "metadata": {"last_login": "2024-05-01"}},\n    {"id": 102, "metadata": {}}\n]\n\nfor u in users:\n    process_user(u)' },
-            { id: '3', name: 'division_logic.py', content: 'def calculate_ratio(a, b):\n    return a / b\n\ndef process_set(val):\n    return calculate_ratio(val, 0)\n\nprocess_set(10)' }
+            { id: '3', name: 'division_logic.py', content: 'def calculate_ratio(a, b):\n    return a / b\n\ndef process_set(val):\n    return calculate_ratio(val, 0)\n\nprocess_set(10)' },
+            { id: '4', name: 'complex_call_stack_error.py', content: 'def process_data_level_5(data):\n    total = sum(data)\n    average = total / 0\n    return average\n\ndef process_data_level_4(data):\n    filtered_data = [x for x in data if x > 0]\n    return process_data_level_5(filtered_data)\n\ndef process_data_level_3(data):\n    normalized = [x * 10 for x in data]\n    return process_data_level_4(normalized)\n\ndef process_data_level_2(data):\n    cleaned = [x if x is not None else 0 for x in data]\n    return process_data_level_3(cleaned)\n\ndef process_data_level_1(data):\n    if not data:\n        return 0\n    return process_data_level_2(data)\n\ndef main():\n    raw_input_data = [1, 2, None, 4, -1, 5]\n    print("Starting data processing pipeline...")\n    result = process_data_level_1(raw_input_data)\n    print(f"Result: {result}")\n\nif __name__ == "__main__":\n    main()' },
+            { id: '5', name: 'oop_complex_error.py', content: 'class DatabaseConnector:\n    def __init__(self):\n        self.connected = False\n        \n    def connect(self):\n        self.connected = True\n        \n    def execute_query(self, query):\n        if not self.connected:\n            raise ConnectionError("Not connected to database")\n        return self._internal_execute(query)\n        \n    def _internal_execute(self, query):\n        parser = QueryParser()\n        return parser.parse_and_run(query)\n\nclass QueryParser:\n    def parse_and_run(self, query):\n        ast = self._build_ast(query)\n        executor = QueryExecutor()\n        return executor.run(ast)\n        \n    def _build_ast(self, query):\n        return {"type": "SELECT", "target": query.split()[1]}\n\nclass QueryExecutor:\n    def run(self, ast):\n        target = ast["target"]\n        return self._fetch_data(target)\n        \n    def _fetch_data(self, target):\n        return self._read_from_disk(target)\n        \n    def _read_from_disk(self, target):\n        data_block = "Block_"\n        block_id = None\n        result = data_block + block_id\n        return result\n\nclass Application:\n    def __init__(self):\n        self.db = DatabaseConnector()\n        \n    def run(self):\n        self.db.connect()\n        self.process_user_request()\n        \n    def process_user_request(self):\n        user_manager = UserManager(self.db)\n        user_manager.get_user_info("alice")\n\nclass UserManager:\n    def __init__(self, db):\n        self.db = db\n        \n    def get_user_info(self, username):\n        query = f"SELECT * FROM users WHERE username=\'{username}\'"\n        result = self.db.execute_query(query)\n        return result\n\ndef main():\n    app = Application()\n    app.run()\n\nif __name__ == "__main__":\n    main()' }
         ];
 
         const extractExceptionType = (msg) => {
@@ -624,7 +633,12 @@
         const loadFiles = () => {
             try {
                 const saved = localStorage.getItem('pyglide_workspace');
-                if (saved) return JSON.parse(saved);
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    const existingNames = new Set(parsed.map(f => f.name));
+                    const newFiles = TEST_FILES.filter(f => !existingNames.has(f.name)).map(f => ({...f, type: 'file', parentId: null}));
+                    return [...parsed, ...newFiles];
+                }
             } catch(e) {}
             return TEST_FILES.map(f => ({...f, type: 'file', parentId: null}));
         };
@@ -836,6 +850,9 @@
             const [draggedNodeId, setDraggedNodeId] = useState(null);
             const [dragOverNodeId, setDragOverNodeId] = useState(null);
             const [editorReady, setEditorReady] = useState(false);
+            const [contextMenu, setContextMenu] = useState(null);
+            const [renamingId, setRenamingId] = useState(null);
+            const [renamingName, setRenamingName] = useState('');
             
             const activeIdRef = useRef(activeId);
             useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
@@ -1734,6 +1751,75 @@ except:
                 });
             };
 
+            const handleDeleteFile = (e, id) => {
+                e.stopPropagation();
+                if (window.confirm('Are you sure you want to delete this?')) {
+                    const getIdsToDelete = (targetId, allFiles) => {
+                        let ids = [targetId];
+                        allFiles.forEach(f => {
+                            if (f.parentId === targetId) {
+                                ids = ids.concat(getIdsToDelete(f.id, allFiles));
+                            }
+                        });
+                        return ids;
+                    };
+                    setFiles(prev => {
+                        const idsToDelete = getIdsToDelete(id, prev);
+                        return prev.filter(f => !idsToDelete.includes(f.id));
+                    });
+                    
+                    if (activeId === id) {
+                        const tabs = loadTabs().filter(t => t !== id);
+                        if (tabs.length > 0) openFile(tabs[0]);
+                        else setActiveId(null);
+                        localStorage.setItem('pyglide_tabs', JSON.stringify(tabs));
+                    }
+                }
+            };
+
+            const handleContextMenu = (e, file) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setContextMenu({ x: e.clientX, y: e.clientY, file });
+            };
+
+            const closeContextMenu = () => {
+                if (contextMenu) setContextMenu(null);
+            };
+
+            useEffect(() => {
+                document.addEventListener('click', closeContextMenu);
+                return () => document.removeEventListener('click', closeContextMenu);
+            }, [contextMenu]);
+
+            const handleDuplicate = (id) => {
+                const target = files.find(f => f.id === id);
+                if (!target) return;
+                const newId = Date.now().toString();
+                const copyName = target.name.includes('.') 
+                    ? target.name.replace('.', '_copy.') 
+                    : target.name + '_copy';
+                const newItem = { ...target, id: newId, name: copyName };
+                setFiles([...files, newItem]);
+                setContextMenu(null);
+            };
+
+            const handleRenameStart = (id) => {
+                const target = files.find(f => f.id === id);
+                if (target) {
+                    setRenamingId(id);
+                    setRenamingName(target.name);
+                }
+                setContextMenu(null);
+            };
+
+            const handleRenameSubmit = (id) => {
+                if (renamingName.trim() !== '') {
+                    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: renamingName.trim() } : f));
+                }
+                setRenamingId(null);
+            };
+
             const renderTree = (parentId, level = 0) => {
                 const nodes = files.filter(f => f.parentId === parentId);
                 const children = nodes.map(f => {
@@ -1756,14 +1842,21 @@ except:
                                     onDragLeave={() => setDragOverNodeId(null)}
                                     onDrop={(e) => handleDrop(e, f.id)}
                                 >
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                                        {f.name}
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden' }}>
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{minWidth: '14px'}}><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                                        {renamingId === f.id ? (
+                                            <input 
+                                                autoFocus 
+                                                value={renamingName} 
+                                                onChange={e => setRenamingName(e.target.value)} 
+                                                onKeyDown={e => { if (e.key === 'Enter') handleRenameSubmit(f.id); if (e.key === 'Escape') setRenamingId(null); }} 
+                                                onBlur={() => handleRenameSubmit(f.id)} 
+                                                style={{background:'transparent', border:'none', outline:'none', color:'var(--text)', width:'100%', fontFamily:'inherit', fontSize:'inherit'}}
+                                            />
+                                        ) : (
+                                            <span className="file-name-text" onContextMenu={(e) => handleContextMenu(e, f)}>{f.name}</span>
+                                        )}
                                     </span>
-                                    <div style={{display:'flex', gap:'8px'}}>
-                                        <button onClick={(e) => { e.stopPropagation(); setCreatingItem({ type: 'file', parentId: f.id }); setNewItemName(''); if(!f.isOpen) toggleFolder(f.id); }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'0.9rem'}} title="New File">+</button>
-                                        <button onClick={(e) => { e.stopPropagation(); setCreatingItem({ type: 'folder', parentId: f.id }); setNewItemName(''); if(!f.isOpen) toggleFolder(f.id); }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'0.9rem'}} title="New Folder">📁</button>
-                                    </div>
                                 </div>
                                 {f.isOpen && renderTree(f.id, level + 1)}
                             </div>
@@ -1779,10 +1872,22 @@ except:
                                 onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverNodeId(f.id); }}
                                 onDragLeave={() => setDragOverNodeId(null)}
                                 onDrop={(e) => handleDrop(e, f.id)}
+                                onContextMenu={(e) => handleContextMenu(e, f)}
                             >
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
-                                    {f.name}
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '6px', flex: 1, overflow: 'hidden' }}>
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{minWidth: '14px'}}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                                    {renamingId === f.id ? (
+                                        <input 
+                                            autoFocus 
+                                            value={renamingName} 
+                                            onChange={e => setRenamingName(e.target.value)} 
+                                            onKeyDown={e => { if (e.key === 'Enter') handleRenameSubmit(f.id); if (e.key === 'Escape') setRenamingId(null); }} 
+                                            onBlur={() => handleRenameSubmit(f.id)} 
+                                            style={{background:'transparent', border:'none', outline:'none', color:'var(--text)', width:'100%', fontFamily:'inherit', fontSize:'inherit'}}
+                                        />
+                                    ) : (
+                                        <span className="file-name-text">{f.name}</span>
+                                    )}
                                 </span>
                             </div>
                         );
@@ -2104,6 +2209,26 @@ except:
                             <div id="xterm-container" ref={termRef}></div>
                         </div>
                     </div>
+                    {contextMenu && (
+                        <div 
+                            className="context-menu" 
+                            style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="context-menu-item" onClick={() => { handleRenameStart(contextMenu.file.id); }}>✎ Rename</div>
+                            <div className="context-menu-item" onClick={() => { handleDuplicate(contextMenu.file.id); }}>⎘ Duplicate</div>
+                            <div className="context-menu-divider"></div>
+                            {contextMenu.file.type === 'folder' && (
+                                <>
+                                    <div className="context-menu-item" onClick={() => { setCreatingItem({ type: 'file', parentId: contextMenu.file.id }); setNewItemName(''); if (!contextMenu.file.isOpen) toggleFolder(contextMenu.file.id); setContextMenu(null); }}>+ New File</div>
+                                    <div className="context-menu-item" onClick={() => { setCreatingItem({ type: 'folder', parentId: contextMenu.file.id }); setNewItemName(''); if (!contextMenu.file.isOpen) toggleFolder(contextMenu.file.id); setContextMenu(null); }}>📁 New Folder</div>
+                                    <div className="context-menu-divider"></div>
+                                </>
+                            )}
+                            <div className="context-menu-item danger" onClick={(e) => { handleDeleteFile(e, contextMenu.file.id); setContextMenu(null); }}>🗑️ Delete</div>
+                        </div>
+                    )}
                 </div>
             );
         }
