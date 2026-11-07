@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PyGlide | Premium Python IDE</title>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -142,6 +143,7 @@
         
         .stats-overlay { position: fixed; inset: 0; background: var(--bg); z-index: 200; padding: 4rem; overflow-y: auto; backdrop-filter: blur(40px); }
     </style>
+    <link rel="stylesheet" href="/src/workspace.css">
 </head>
 <body>
     <div id="root"></div>
@@ -818,6 +820,38 @@
             return parts.filter(Boolean).join('\n\n');
         };
 
+        const DEFAULT_LAYOUT = {
+            explorerVisible: window.innerWidth > 620,
+            consoleVisible: true,
+            analysisVisible: false,
+            consoleHeight: 230,
+            analysisWidth: 420
+        };
+
+        const loadLayout = () => {
+            let saved = {};
+            try { saved = JSON.parse(localStorage.getItem('pyglide_layout')) || {}; } catch (e) {}
+            return Object.fromEntries(Object.entries(DEFAULT_LAYOUT).map(([key, fallback]) => [
+                key,
+                typeof fallback === 'boolean'
+                    ? (typeof saved[key] === 'boolean' ? saved[key] : fallback)
+                    : (Number.isFinite(saved[key]) ? Math.max(key === 'analysisWidth' ? 280 : 100, Math.min(1200, saved[key])) : fallback)
+            ]));
+        };
+
+        function PaneIcon({ name }) {
+            const paths = {
+                explorer: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/></>,
+                console: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15h18M7 7l3 3-3 3m6 0h4"/></>,
+                analysis: <><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18M6 8h5m-5 4h5m-5 4h3"/></>,
+                close: <path d="m6 6 12 12M6 18 18 6"/>,
+                maximize: <path d="m6 14 6-6 6 6"/>,
+                restore: <path d="m6 10 6 6 6-6"/>,
+                reset: <><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></>
+            };
+            return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+        }
+
         function App() {
             const [selectedModel, setSelectedModel] = useState('qwen2.5-coder:1.5b');
             const [files, setFiles] = useState(loadFiles());
@@ -837,7 +871,109 @@
             const streamAbortControllerRef = useRef(null);
             const logFileInputRef = useRef(null);
             
-            const [termHeight, setTermHeight] = useState(250);
+            const [layout, setLayout] = useState(loadLayout);
+            const [consoleMaximized, setConsoleMaximized] = useState(false);
+            const mainRef = useRef(null);
+            const editorZoneRef = useRef(null);
+            const resizeRef = useRef(null);
+            const analysisToggleRef = useRef(null);
+            const consoleToggleRef = useRef(null);
+
+            const clearAnalysis = () => {
+                streamAbortControllerRef.current?.abort();
+                streamAbortControllerRef.current = null;
+                setRca(null);
+            };
+            const togglePane = (pane) => {
+                setLayout(previous => ({ ...previous, [`${pane}Visible`]: !previous[`${pane}Visible`] }));
+                if (pane === 'analysis') setConsoleMaximized(false);
+            };
+            const showAnalysis = () => {
+                setLayout(previous => ({ ...previous, analysisVisible: true }));
+                setConsoleMaximized(false);
+            };
+            const showConsole = () => setLayout(previous => ({ ...previous, consoleVisible: true }));
+            const hidePane = (pane) => {
+                if (pane === 'analysis') clearAnalysis();
+                setLayout(previous => ({ ...previous, [`${pane}Visible`]: false }));
+                if (pane === 'console') setConsoleMaximized(false);
+                (pane === 'analysis' ? analysisToggleRef : consoleToggleRef).current?.focus();
+            };
+
+            useEffect(() => {
+                try { localStorage.setItem('pyglide_layout', JSON.stringify(layout)); } catch (e) {}
+            }, [layout]);
+
+            useEffect(() => {
+                const handleLayoutShortcut = (event) => {
+                    if (!(event.ctrlKey || event.metaKey) || event.repeat) return;
+                    const key = event.key.toLowerCase();
+                    const pane = !event.altKey && !event.shiftKey && key === 'b' ? 'explorer'
+                        : !event.altKey && !event.shiftKey && key === 'j' ? 'console'
+                        : event.altKey && !event.shiftKey && key === 'a' ? 'analysis' : null;
+                    if (!pane) return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    togglePane(pane);
+                };
+                window.addEventListener('keydown', handleLayoutShortcut, true);
+                return () => window.removeEventListener('keydown', handleLayoutShortcut, true);
+            }, []);
+
+            const paneSizeLimits = (pane) => {
+                const bounds = (pane === 'analysis' ? editorZoneRef : mainRef).current?.getBoundingClientRect();
+                const maximum = pane === 'analysis' ? (bounds?.width || window.innerWidth) * .58
+                    : Math.max(80, ((bounds?.height || window.innerHeight) - 52) * .55);
+                return { min: Math.min(pane === 'analysis' ? 280 : 100, maximum), max: maximum };
+            };
+            const setPaneSize = (pane, value) => {
+                const limits = paneSizeLimits(pane);
+                setLayout(previous => ({ ...previous, [pane === 'analysis' ? 'analysisWidth' : 'consoleHeight']:
+                    Math.round(Math.max(limits.min, Math.min(limits.max, value))) }));
+            };
+            const startPaneResize = (event, pane) => {
+                if (event.button !== 0) return;
+                event.preventDefault();
+                const panel = document.getElementById(pane === 'analysis' ? 'analysis-panel' : 'console-panel');
+                const bounds = panel.getBoundingClientRect();
+                resizeRef.current = { pane, origin: pane === 'analysis' ? event.clientX : event.clientY,
+                    size: pane === 'analysis' ? bounds.width : bounds.height };
+                event.currentTarget.setPointerCapture(event.pointerId);
+                event.currentTarget.classList.add('is-resizing');
+                document.body.classList.add(`resizing-${pane}`);
+            };
+            const movePaneResize = (event) => {
+                const drag = resizeRef.current;
+                if (drag) setPaneSize(drag.pane, drag.size + drag.origin - (drag.pane === 'analysis' ? event.clientX : event.clientY));
+            };
+            const endPaneResize = (event) => {
+                resizeRef.current = null;
+                event.currentTarget.classList.remove('is-resizing');
+                document.body.classList.remove('resizing-analysis', 'resizing-console');
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+            };
+            const resizeHandleProps = (pane) => {
+                const limits = paneSizeLimits(pane);
+                return {
+                    role: 'separator', tabIndex: 0, 'aria-label': `Resize ${pane} panel`,
+                    'aria-orientation': pane === 'analysis' ? 'vertical' : 'horizontal',
+                    'aria-controls': pane === 'analysis' ? 'analysis-panel' : 'console-panel',
+                    'aria-valuemin': Math.round(limits.min), 'aria-valuemax': Math.round(limits.max),
+                    'aria-valuenow': Math.round(Math.min(limits.max, Math.max(limits.min,
+                        pane === 'analysis' ? layout.analysisWidth : layout.consoleHeight))),
+                    title: 'Drag to resize · Arrow keys to adjust · Double-click to reset',
+                    onPointerDown: event => startPaneResize(event, pane), onPointerMove: movePaneResize,
+                    onPointerUp: endPaneResize, onPointerCancel: endPaneResize, onLostPointerCapture: endPaneResize,
+                    onDoubleClick: () => setPaneSize(pane, pane === 'analysis' ? 420 : 230),
+                    onKeyDown: event => {
+                        const keys = pane === 'analysis' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
+                        if (!keys.includes(event.key)) return;
+                        event.preventDefault();
+                        const bounds = document.getElementById(pane === 'analysis' ? 'analysis-panel' : 'console-panel').getBoundingClientRect();
+                        setPaneSize(pane, (pane === 'analysis' ? bounds.width : bounds.height) + (event.key === keys[0] ? 20 : -20));
+                    }
+                };
+            };
 
             const [rca, setRca] = useState(null);
             const [selectedLanguage, setSelectedLanguage] = useState('hi-IN');
@@ -865,6 +1001,33 @@
 
             const monacoRef = useRef(null);
             const editorInstance = useRef(null);
+
+            // Refitting on element size changes covers zoom, pane toggles and dragging.
+            useEffect(() => {
+                let frame;
+                const fitWorkspace = () => {
+                    cancelAnimationFrame(frame);
+                    frame = requestAnimationFrame(() => {
+                        const editor = monacoRef.current;
+                        if (editor?.clientWidth && editor.clientHeight) {
+                            editorInstance.current?.layout({ width: editor.clientWidth, height: editor.clientHeight });
+                        }
+                        if (termRef.current?.clientWidth && termRef.current.clientHeight) fitAddonRef.current?.fit();
+                    });
+                };
+                const observer = new ResizeObserver(fitWorkspace);
+                [mainRef.current, monacoRef.current, termRef.current].filter(Boolean).forEach(element => observer.observe(element));
+                return () => { observer.disconnect(); cancelAnimationFrame(frame); };
+            }, []);
+
+            useEffect(() => {
+                if (layout.consoleVisible) {
+                    const frame = requestAnimationFrame(() => {
+                        if (termRef.current?.clientWidth && termRef.current.clientHeight) fitAddonRef.current?.fit();
+                    });
+                    return () => cancelAnimationFrame(frame);
+                }
+            }, [layout.consoleVisible, consoleMaximized]);
 
             useEffect(() => {
                 setTranslatedRca('');
@@ -937,7 +1100,6 @@
                             if (!editorInstance.current || !activeIdRef.current) return;
                             const val = editorInstance.current.getValue();
                             setFiles(prev => prev.map(f => f.id === activeIdRef.current ? { ...f, content: val } : f));
-                            setRca(null); // Clear stale RCA
                         });
                         
                         // Register Pyodide Live Autocompletion
@@ -1002,7 +1164,6 @@ except:
             const openFile = (id) => {
                 if (!openTabs.includes(id)) setOpenTabs([...openTabs, id]);
                 setActiveId(id);
-                setRca(null);
             };
 
             const closeTab = (e, id) => {
@@ -1043,6 +1204,8 @@ except:
                 const file = event.target.files && event.target.files[0];
                 event.target.value = '';
                 if (!file) return;
+                showAnalysis();
+                setView('editor');
 
                 const nameLower = file.name.toLowerCase();
                 const isExcel = nameLower.endsWith('.xlsx') || nameLower.endsWith('.xls');
@@ -1150,6 +1313,7 @@ except:
                     });
 
                     const analysis = await analysisResponse.json().catch(() => ({}));
+                    if (controller.signal.aborted) return;
                     if (!analysisResponse.ok) {
                         throw new Error(analysis.detail || `Log analysis failed: ${analysisResponse.status}`);
                     }
@@ -1241,7 +1405,7 @@ except:
 
                     while (true) {
                         const { done, value } = await reader.read();
-                        if (done) break;
+                        if (done || controller.signal.aborted) break;
 
                         const chunk = decoder.decode(value, { stream: true });
                         accumulatedText += chunk;
@@ -1290,13 +1454,14 @@ except:
                         }
                     }
                 } catch (err) {
-                    if (err.name === 'AbortError') return;
+                    if (err.name === 'AbortError' || controller.signal.aborted) return;
                     setRca(p => p ? {
                         ...p,
                         llmLoading: false,
                         mlError: `Log debugger unavailable: ${err.message || String(err)}`
                     } : p);
                 } finally {
+                    if (controller.signal.aborted) return;
                     setRca(p => {
                         if (!p) return p;
                         const finalFb = p.feedback || parsePartialJSON(p.streamText);
@@ -1334,7 +1499,9 @@ except:
                         
                         // Delay fit slightly to ensure container is sized
                         if (fitAddon) {
-                            setTimeout(() => fitAddon.fit(), 100);
+                            setTimeout(() => {
+                                if (termRef.current?.clientWidth && termRef.current.clientHeight) fitAddon.fit();
+                            }, 100);
                         }
                         
                         termInstance.current = term;
@@ -1371,33 +1538,11 @@ except:
                             }
                         });
                         
-                        window.addEventListener('resize', () => { if (fitAddonRef.current) fitAddonRef.current.fit(); });
                     }
                 } catch (e) {
                     console.error("XTERM INIT ERROR:", e);
                 }
             }, []);
-
-            const startResize = (e) => {
-                e.preventDefault();
-                const startY = e.clientY;
-                const startHeight = termHeight;
-                
-                const onMouseMove = (moveEvent) => {
-                    const deltaY = startY - moveEvent.clientY;
-                    const newHeight = Math.max(100, Math.min(startHeight + deltaY, window.innerHeight - 100));
-                    setTermHeight(newHeight);
-                };
-                
-                const onMouseUp = () => {
-                    document.removeEventListener('mousemove', onMouseMove);
-                    document.removeEventListener('mouseup', onMouseUp);
-                    if (fitAddonRef.current) fitAddonRef.current.fit();
-                };
-                
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
-            };
 
             const rebootWorker = (fromRun = false) => {
                 if (workerRef.current) {
@@ -1443,6 +1588,7 @@ except:
                         }
 
                         if (type === 'error') {
+                            showAnalysis();
                             const currentCode = editorInstance.current ? editorInstance.current.getValue() : '';
                             const base = analyze(error, currentCode);
 
@@ -1451,7 +1597,8 @@ except:
                                     streamAbortControllerRef.current.abort();
                                 } catch (e) {}
                             }
-                            streamAbortControllerRef.current = new AbortController();
+                            const controller = new AbortController();
+                            streamAbortControllerRef.current = controller;
 
                             setRca({
                                 ...base,
@@ -1467,7 +1614,7 @@ except:
                             fetch('http://localhost:8000/stream-feedback', {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                signal: streamAbortControllerRef.current.signal,
+                                signal: controller.signal,
                                 body: JSON.stringify({
                                     error: {
                                         type: excType,
@@ -1482,6 +1629,7 @@ except:
                                     model: selectedModel
                                 })
                             }).then(async (streamResponse) => {
+                                if (controller.signal.aborted) return;
                                 if (!streamResponse.ok) throw new Error(`Stream connection failed: ${streamResponse.status}`);
                                 if (!streamResponse.body) throw new Error('ReadableStream not supported');
 
@@ -1491,7 +1639,7 @@ except:
 
                                 while (true) {
                                     const { done, value } = await reader.read();
-                                    if (done) break;
+                                    if (done || controller.signal.aborted) break;
 
                                     const chunk = decoder.decode(value, { stream: true });
                                     accumulatedText += chunk;
@@ -1544,13 +1692,14 @@ except:
                                     }
                                 }
                             }).catch((err) => {
-                                if (err.name === 'AbortError') return;
+                                if (err.name === 'AbortError' || controller.signal.aborted) return;
                                 setRca(p => p ? {
                                     ...p,
                                     llmLoading: false,
                                     mlError: `Local ML backend unavailable: ${err.message}`
                                 } : p);
                             }).finally(() => {
+                                if (controller.signal.aborted) return;
                                 setRca(p => {
                                     if (!p) return p;
                                     const finalFb = p.feedback || parsePartialJSON(p.streamText);
@@ -1585,6 +1734,7 @@ except:
                     
                     navigator.serviceWorker.addEventListener('message', (event) => {
                         if (event.data && event.data.type === 'input_requested') {
+                            showConsole();
                             pendingInputUidRef.current = event.data.uid;
                             isWaitingForInputRef.current = true;
                             isReplRef.current = false;
@@ -1614,6 +1764,9 @@ except:
 
             const run = async () => {
                 if (!editorInstance.current) return;
+                clearAnalysis();
+                showConsole();
+                setConsoleMaximized(false);
                 const currentCode = editorInstance.current.getValue() || '';
                 
                 
@@ -1917,7 +2070,7 @@ except:
             };
 
             return (
-                <div className="layout">
+                <div className="layout" style={{ '--analysis-width': `${layout.analysisWidth}px`, '--console-height': `${layout.consoleHeight}px` }}>
                     <input
                         ref={logFileInputRef}
                         className="log-upload-input"
@@ -1927,8 +2080,8 @@ except:
                     />
                     {view === 'stats' && <AnalyticsPanel onBack={()=>setView('editor')} />}
                     {view === 'benchmarks' && <BenchmarksPanel onBack={()=>setView('editor')} />}
-                    <aside className="sidebar">
-                        <div className="logo" style={{marginBottom: '1.5rem'}}>PYGLIDE</div>
+                    <aside className="sidebar" id="explorer-panel" aria-label="Explorer" hidden={!layout.explorerVisible}>
+                        <div className="explorer-heading"><div className="logo" style={{marginBottom: 0}}>PYGLIDE</div><button className="panel-action" aria-label="Hide explorer" title="Hide Explorer (Ctrl+B)" onClick={() => togglePane('explorer')}><PaneIcon name="close"/></button></div>
                         
                         <div style={{display:'flex', flexDirection:'column', gap:'10px', padding:'0 10px', marginBottom:'2rem'}}>
                             <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>setView('stats')} title="View Programmer Focus Analytics">
@@ -1969,9 +2122,9 @@ except:
                         </div>
                         {renderTree(null)}
                     </aside>
-                    <div className="main">
+                    <div className="main" ref={mainRef}>
                         <div className="toolbar">
-                            <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
+                            <div className="runtime-actions">
                                 <select 
                                     value={selectedModel}
                                     onChange={(e) => setSelectedModel(e.target.value)}
@@ -1993,13 +2146,29 @@ except:
                                         <option key={m.id} value={m.id} style={{background: '#0a0a0c'}}>{m.name}</option>
                                     ))}
                                 </select>
-                                <button className="btn" onClick={run} disabled={!engineReady}>{engineReady ? "EXECUTE RUNTIME" : "LOADING ENGINE..."}</button>
+                                <button className="btn" onClick={run} disabled={!engineReady || !editorReady}>{engineReady && editorReady ? "EXECUTE RUNTIME" : "LOADING ENGINE..."}</button>
                             </div>
-                            <div style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:800, letterSpacing:'1px', display:'flex', alignItems:'center', gap:'8px'}}>
+                            <div className="workspace-actions">
+                            <div className="system-status" style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:800, letterSpacing:'1px', display:'flex', alignItems:'center', gap:'8px'}}>
                                 <div style={{width:6, height:6, borderRadius:'50%', background:'var(--success)'}}></div> SYSTEM STANDBY
                             </div>
+                            <div className="layout-controls" role="group" aria-label="Workspace panels">
+                                <button className="panel-toggle" onClick={() => togglePane('explorer')} aria-label="Toggle explorer" aria-pressed={layout.explorerVisible} aria-controls="explorer-panel" aria-keyshortcuts="Control+B Meta+B" title="Toggle Explorer (Ctrl+B)">
+                                    <PaneIcon name="explorer"/><span>Explorer</span>
+                                </button>
+                                <button ref={consoleToggleRef} className="panel-toggle" onClick={() => togglePane('console')} aria-label="Toggle console" aria-pressed={layout.consoleVisible} aria-controls="console-panel" aria-keyshortcuts="Control+J Meta+J" title="Toggle Console (Ctrl+J)">
+                                    <PaneIcon name="console"/><span>Console</span>
+                                </button>
+                                <button ref={analysisToggleRef} className="panel-toggle" onClick={() => togglePane('analysis')} aria-label="Toggle analysis" aria-pressed={layout.analysisVisible} aria-controls="analysis-panel" aria-keyshortcuts="Control+Alt+A Meta+Alt+A" title="Toggle Root Cause Analysis (Ctrl+Alt+A)">
+                                    <PaneIcon name="analysis"/><span>Analysis</span>
+                                </button>
+                                <button className="panel-action" onClick={() => { setLayout({ ...DEFAULT_LAYOUT }); setConsoleMaximized(false); }} aria-label="Reset panel layout" title="Reset panel layout">
+                                    <PaneIcon name="reset"/>
+                                </button>
+                            </div>
+                            </div>
                         </div>
-                        <div className="editor-zone">
+                        <div className="editor-zone" ref={editorZoneRef} hidden={layout.consoleVisible && consoleMaximized}>
                             <div className="editor-container">
                                 <div className="tabs-container">
                                     {openTabs.map(tId => {
@@ -2015,7 +2184,15 @@ except:
                                 </div>
                                 <div id="monaco-container" ref={monacoRef}></div>
                             </div>
-                            {rca && (() => {
+                            <aside className="rca-panel" id="analysis-panel" aria-labelledby="analysis-panel-title" hidden={!layout.analysisVisible}>
+                                <div className="pane-resizer analysis-resizer" {...resizeHandleProps('analysis')}></div>
+                                <div className="rca-header">
+                                    <div className="pane-heading"><PaneIcon name="analysis"/><h2 className="rca-title" id="analysis-panel-title">{rca?.sourceType === 'log' ? 'Log Root Cause Analysis' : 'Root Cause Analysis'}</h2></div>
+                                    <button className="panel-action" onClick={() => hidePane('analysis')} aria-label="Close analysis" title="Close analysis and clear result"><PaneIcon name="close"/></button>
+                                </div>
+                                <div className="rca-body">
+                                {!rca && <div className="panel-empty-state"><PaneIcon name="analysis"/><h2>No analysis yet</h2><p>Run a Python file or upload a log to inspect its root cause analysis here.</p><p>You can hide and reopen this panel anytime.</p></div>}
+                                {rca && (() => {
                                 const parsedStream = rca.llmLoading ? parsePartialJSON(rca.streamText) : {};
                                 const activeFeedback = rca.llmLoading ? parsedStream : (rca.feedback || {});
                                 const isLogDebug = rca.sourceType === 'log';
@@ -2024,12 +2201,7 @@ except:
                                 const deterministicIns = rca.ins;
 
                                 return (
-                                    <div className="rca-panel">
-                                        <div className="rca-header">
-                                            <div className="rca-title">{isLogDebug ? 'LOG ROOT CAUSE ANALYSIS' : 'ROOT CAUSE ANALYSIS'}</div>
-                                            <button onClick={()=>setRca(null)} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontWeight:700, fontSize:'0.75rem', transition:'color 0.2s'}} onMouseOver={e=>e.target.style.color='#fff'} onMouseOut={e=>e.target.style.color='var(--text-dim)'}>DISMISS</button>
-                                        </div>
-
+                                    <React.Fragment>
                                         <div className="diagnostic-card" style={{border: '1px solid rgba(168, 85, 247, 0.2)', background: 'rgba(168, 85, 247, 0.05)'}}>
                                             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'1.25rem'}}>
                                                 <div style={{fontSize:'0.65rem', fontWeight:800, color:'#a855f7', letterSpacing:'0.1em'}}>{isLogDebug ? 'LOG LLM ANALYSIS' : 'SEMANTIC LLM ANALYSIS'}</div>
@@ -2194,20 +2366,24 @@ except:
                                                 })}
                                             </div>
                                         </div>
-                                    </div>
+                                    </React.Fragment>
                                 );
                             })()}
+                                </div>
+                            </aside>
                         </div>
-                        <div className="terminal" style={{ height: `${termHeight}px` }}>
-                            <div className="terminal-resizer" onMouseDown={startResize}></div>
+                        <section className={`terminal ${consoleMaximized ? 'is-maximized' : ''}`} id="console-panel" aria-labelledby="console-panel-title" hidden={!layout.consoleVisible}>
+                            {!consoleMaximized && <div className="pane-resizer terminal-resizer" {...resizeHandleProps('console')}></div>}
                             <div className="terminal-header">
-                                <div>SYSTEM CONSOLE & REPL</div>
-                                <div style={{display:'flex', gap:'10px'}}>
-                                    <button onClick={() => { if(termInstance.current) { termInstance.current.clear(); termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n>>> '); } }} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'0.7rem', fontWeight:700}}>CLEAR</button>
+                                <div className="pane-heading"><PaneIcon name="console"/><h2 className="terminal-title" id="console-panel-title">SYSTEM CONSOLE & REPL</h2></div>
+                                <div className="pane-actions">
+                                    <button className="panel-action" onClick={() => { if(termInstance.current) { termInstance.current.clear(); termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n>>> '); } }} title="Clear console">CLEAR</button>
+                                    <button className="panel-action" onClick={() => setConsoleMaximized(previous => !previous)} aria-label={consoleMaximized ? 'Restore console size' : 'Maximize console'} title={consoleMaximized ? 'Restore console size' : 'Maximize console'}><PaneIcon name={consoleMaximized ? 'restore' : 'maximize'}/></button>
+                                    <button className="panel-action" onClick={() => hidePane('console')} aria-label="Hide console" title="Hide Console (Ctrl+J)"><PaneIcon name="close"/></button>
                                 </div>
                             </div>
                             <div id="xterm-container" ref={termRef}></div>
-                        </div>
+                        </section>
                     </div>
                     {contextMenu && (
                         <div 

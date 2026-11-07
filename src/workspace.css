@@ -1,0 +1,78 @@
+/* Keep every pane within the viewport, including at browser zoom levels. */
+html, body, #root { width: 100%; height: 100%; overflow: hidden; }
+.layout { width: 100%; height: 100dvh; overflow: hidden; }
+.layout [hidden] { display: none !important; }
+.sidebar { flex: 0 0 224px; width: 224px; min-height: 0; overflow: auto; padding: 22px 12px; }
+.explorer-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.main { min-width: 0; min-height: 0; overflow: hidden; container-type: inline-size; }
+.toolbar { flex: 0 0 auto; min-height: 52px; height: auto; padding: 8px 14px; gap: 12px; flex-wrap: wrap; }
+.runtime-actions, .workspace-actions { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.runtime-actions { flex-wrap: wrap; }
+.runtime-actions select { min-width: 0; max-width: 180px; }
+.workspace-actions { margin-left: auto; }
+.layout-controls { display: flex; gap: 3px; padding-left: 10px; border-left: 1px solid var(--border); }
+.panel-toggle, .panel-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 5px 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text-dim); font: 500 11px 'Inter', sans-serif; cursor: pointer; white-space: nowrap; }
+.panel-toggle svg, .panel-action svg { width: 16px; height: 16px; flex-shrink: 0; }
+.panel-toggle:hover, .panel-action:hover { background: rgba(255,255,255,.07); color: var(--text); }
+.panel-toggle[aria-pressed="true"] { color: #93c5fd; background: var(--accent-dim); border-color: rgba(59,130,246,.25); }
+.panel-toggle:focus-visible, .panel-action:focus-visible, .pane-resizer:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.panel-action { padding: 5px 7px; }
+.editor-zone, .editor-container { min-width: 0; min-height: 0; }
+.editor-zone { flex: 1 1 0; }
+.editor-container { flex: 1 1 0; isolation: isolate; }
+.tabs-container { flex: 0 0 38px; height: 38px; min-width: 0; padding: 0 6px; align-items: stretch; scrollbar-width: thin; }
+.editor-tab { flex-shrink: 0; white-space: nowrap; max-width: 260px; }
+.editor-tab > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#monaco-container { min-height: 0; height: 0; flex: 1 1 0; }
+.rca-panel { position: relative; inset: auto; flex: 0 0 auto; width: var(--analysis-width, 420px); max-width: 58%; min-width: 0; min-height: 0; padding: 0; gap: 0; overflow: hidden; box-shadow: none; backdrop-filter: none; background: var(--bg); animation: none; z-index: 10; }
+.rca-header, .terminal-header { flex: 0 0 auto; min-height: 38px; padding: 4px 12px; gap: 10px; border-bottom: 1px solid var(--border); background: #101013; }
+.rca-header { position: relative; }
+.rca-title, .terminal-title { font-size: 10px; letter-spacing: .08em; line-height: 1.5; min-width: 0; }
+.pane-heading { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.pane-heading svg { width: 14px; height: 14px; flex-shrink: 0; color: var(--text-dim); }
+.pane-actions { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.rca-body { flex: 1 1 0; min-height: 0; min-width: 0; padding: 16px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 22px; }
+.rca-body > * { flex-shrink: 0; min-width: 0; }
+.rca-body .diagnostic-card { padding: 16px; }
+.rca-body .feedback-block { padding: 12px; }
+.rca-body .diagnostic-card > div:first-child { flex-wrap: wrap; gap: 8px; }
+.rca-body .language-select { min-width: min(150px, 100%); max-width: 100%; }
+.rca-body pre { max-width: 100%; }
+.panel-empty-state { margin: auto; padding: 24px 12px; text-align: center; color: var(--text-dim); font-size: 13px; line-height: 1.7; }
+.panel-empty-state h2 { color: var(--text); font-size: 14px; margin: 10px 0 6px; }
+.panel-empty-state svg { width: 30px; height: 30px; color: var(--accent); }
+.terminal { flex: 0 0 auto; min-width: 0; min-height: 0; height: min(var(--console-height, 230px), 55%); z-index: 20; }
+.terminal.is-maximized { flex: 1 1 0; height: auto; }
+.terminal-header { font-weight: 700; letter-spacing: .08em; }
+#xterm-container { min-height: 0; min-width: 0; padding: 8px 12px; }
+.pane-resizer { position: absolute; z-index: 30; touch-action: none; }
+.pane-resizer::after { content: ''; position: absolute; background: transparent; transition: background .12s; }
+.pane-resizer:hover::after, .pane-resizer:focus-visible::after, .pane-resizer.is-resizing::after { background: var(--accent); }
+.analysis-resizer { left: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; }
+.analysis-resizer::after { left: 0; top: 0; bottom: 0; width: 2px; }
+.terminal-resizer { top: -3px; left: 0; width: 100%; height: 6px; cursor: row-resize; }
+.terminal-resizer::after { top: 2px; left: 0; right: 0; height: 2px; }
+.terminal-resizer:hover, .terminal-resizer:active { background: transparent; opacity: 1; }
+body.resizing-analysis, body.resizing-analysis * { cursor: col-resize !important; user-select: none !important; }
+body.resizing-console, body.resizing-console * { cursor: row-resize !important; user-select: none !important; }
+@container (max-width: 850px) {
+    .system-status { display: none !important; }
+    .layout-controls { border-left: 0; padding-left: 0; }
+    .panel-toggle span { display: none; }
+}
+@container (max-width: 700px) {
+    .rca-panel { position: absolute; top: 0; bottom: 0; right: 0; width: min(var(--analysis-width, 420px), 100%); max-width: 100%; box-shadow: -12px 0 30px rgba(0,0,0,.3); }
+    .analysis-resizer { display: none; }
+}
+@container (max-width: 450px) {
+    .toolbar { padding: 6px 8px; gap: 6px; }
+    .runtime-actions { flex: 1 1 100%; }
+    .runtime-actions select { flex: 1; max-width: none; }
+    .workspace-actions { margin-left: 0; }
+    .panel-toggle span { display: inline; }
+    .rca-body { padding: 12px; }
+    .terminal-header { padding-inline: 8px; }
+}
+@media (max-width: 620px) {
+    .sidebar { position: absolute; inset: 0 auto 0 0; z-index: 60; width: min(224px, 80vw); box-shadow: 10px 0 30px rgba(0,0,0,.4); }
+}
