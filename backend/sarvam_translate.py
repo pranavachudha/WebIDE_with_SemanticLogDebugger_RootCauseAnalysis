@@ -6,7 +6,7 @@ import httpx
 
 # Paste your Sarvam API key here if you do not want to use an environment variable.
 # Example: SARVAM_API_KEY = "sk_your_key_here"
-SARVAM_API_KEY = "sk_80iyktp5_OFQUoMwi14VePstfDsxmec7K"
+SARVAM_API_KEY = "sk_drgmd9lv_Pgdve1iCiieWfj2XGc6Jmrtg"
 
 SARVAM_API_URL = "https://api.sarvam.ai/translate"
 SARVAM_TRANSLATE_MODEL = "sarvam-translate:v1"
