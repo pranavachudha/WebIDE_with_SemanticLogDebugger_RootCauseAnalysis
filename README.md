@@ -13,7 +13,7 @@ The project has three moving parts:
 Install these before running the project:
 
 - Node.js 18+ and npm
-- Python 3.10+ recommended
+- Python 3.10+ recommended (3.11 or newer works)
 - Ollama
 - The Ollama models used by the project: `qwen2.5-coder:1.5b`, `llama3.2:1b`, `phi4-mini:latest`
 - Sarvam API key for translating RCA output into Indian languages
@@ -40,6 +40,23 @@ cd backend
 pip install -r requirements.txt
 cd ..
 ```
+
+### Windows setup (recommended if pip fails with long path or build errors)
+
+Long project folder paths can break the PyTorch install on Windows, and pinned older versions may try to compile from source. To avoid both, create the virtual environment at a short path:
+
+```powershell
+python -m venv E:\venvs\logdbg
+E:\venvs\logdbg\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+E:\venvs\logdbg\Scripts\python.exe -m pip install fastapi uvicorn pydantic sentence-transformers requests python-multipart scikit-learn httpx --only-binary=:all:
+```
+
+Notes:
+
+- Replace `E:\venvs\logdbg` with any short folder you like, for example `C:\venvs\logdbg`.
+- The first command installs the CPU build of PyTorch, which is smaller and works without an NVIDIA GPU.
+- `--only-binary=:all:` prevents pip from compiling packages, so Microsoft C++ Build Tools are not needed.
+- Do not install into a shared conda environment, since the pinned versions can downgrade packages used by other projects.
 
 Install/pull the local Ollama models:
 
@@ -68,6 +85,13 @@ From the project root:
 ```bash
 cd backend
 python main.py
+```
+
+If you used the Windows setup above, start the backend with the venv Python instead:
+
+```powershell
+cd backend
+E:\venvs\logdbg\Scripts\python.exe main.py
 ```
 
 The backend should start on:
@@ -182,6 +206,18 @@ If the RCA panel says the backend is unavailable:
 - Make sure Terminal 2 is running `python main.py` inside the `backend` folder.
 - Confirm the backend is reachable at `http://localhost:8000`.
 - Check that the frontend is using the same backend URL.
+
+If you see `ModuleNotFoundError: No module named 'xyz'`:
+
+- Install the missing package with the same Python you use to run the backend, for example:
+
+```powershell
+E:\venvs\logdbg\Scripts\python.exe -m pip install xyz
+```
+
+If pip fails with a long path error or asks for Microsoft Visual C++ Build Tools:
+
+- Follow the **Windows setup** section above. It uses a short venv path and prebuilt packages only.
 
 If translation says the Sarvam API key is missing:
 
