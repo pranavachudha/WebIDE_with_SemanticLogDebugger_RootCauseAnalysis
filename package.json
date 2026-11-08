@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --test tests/workspace-state.test.cjs tests/python-worker.test.cjs"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.6.0",
@@ -24,6 +25,7 @@
     "postcss": "^8.5.14",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
-    "vite": "^5.2.0"
+    "vite": "^5.2.0",
+    "@babel/parser": "7.29.3"
   }
 }

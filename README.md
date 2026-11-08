@@ -124,20 +124,23 @@ http://localhost:3000
 
 1. Open PyGlide at `http://localhost:3000`.
 2. Select or write Python code in the editor.
-3. Click `EXECUTE RUNTIME`.
+3. Once Python is ready, click `EXECUTE RUNTIME`. Use `STOP` to end a running program.
 4. If the code fails, the RCA panel appears.
 5. The backend parses the traceback, retrieves similar historical bugs, runs root cause analysis, and asks the local Ollama model for developer feedback.
 6. The panel shows the symptom, root cause, recommended fix, evidence, developer fix plan, prevention checks, and debugging questions.
 7. After the LLM output finishes, use `Translate Generated RCA`, select an Indian language, and click `CONVERT`.
 8. Change the local AI model using the model dropdown in the top toolbar. Pull the selected model in Ollama before using it.
 
-Sample failures are in `examples/`. Copy a script into the editor, or run it locally with a command such as `python examples/division_error.py`. These scripts intentionally raise errors for debugging demonstrations.
+The Explorer loads the available predefined scripts from the local `examples/` folder. These intentionally fail for debugging demonstrations; you can also run them locally, for example with `python examples/division_error.py`.
+
+Deleting a predefined example requires `EXAMPLE_DELETE_PASSWORD` from `backend/.env` and permanently removes its disk file. Ordinary workspace files need no password and are removed from the browser's saved workspace. Deleted examples are not recreated on reload; existing browser files are preserved under `workspace/`.
 
 ### Workspace panels
 
-- Toggle **Explorer**, **Console**, and **Analysis** from the toolbar. Hiding panels preserves their contents; **×** clears Analysis, while closing Console keeps its session.
-- RCA survives file switches and edits until Analysis is closed or a file runs again.
-- Drag panel edges to resize, use the console chevron to maximize/restore, or select **Reset panel layout**. Sizes and visibility are saved locally.
+- Toggle **Explorer**, **Console**, and **Analysis** from the toolbar. Closing a panel with **×** hides it and preserves its contents.
+- RCA survives file switches, edits, and closing/reopening the panel until another file runs. Successful runs leave no previous analysis.
+- Drag the left sidebar's right edge, Analysis's left edge, or Console's top edge to resize. Arrow keys also work when an edge is focused; double-click to reset its size. Sizes and visibility are saved locally.
+- Use the console chevron to maximize/restore, or select **Reset panel layout** to restore the defaults.
 - Shortcuts: `Ctrl+B` Explorer, `Ctrl+J` Console, `Ctrl+Alt+A` Analysis. Use Command instead of Ctrl on macOS.
 
 ## Log Debugger
@@ -160,6 +163,8 @@ PyGlide also supports log-based debugging without running the original source fi
 - `POST /ingest-bugsinpy` - ingest BugsInPy records into the vector store
 - `POST /generate-embedding` - generate an embedding for custom text
 - `POST /translate-feedback` - translate generated RCA feedback with Sarvam Translate
+- `GET /workspace/examples` - list the example files currently on disk
+- `POST /workspace/examples/delete` - permanently delete selected examples, checking the password for predefined files
 
 ## Ollama Notes
 
@@ -170,6 +175,8 @@ The configured local model options are:
 - `qwen2.5-coder:1.5b` (default coding model)
 - `llama3.2:1b` (general reasoning option)
 - `phi4-mini:latest` (additional reasoning option)
+
+The **Model Guide** lists these options and lets you select one. It does not display unmeasured response-time or quality claims.
 
 Pull the selected model with `ollama pull <model-name>` as shown in setup.
 
@@ -249,6 +256,7 @@ If frontend does not open on the expected port:
 backend/
 ├── .env.example                 # Safe template for ignored local credentials
 ├── main.py                      # FastAPI app and API routes
+├── example_files.py             # Disk examples and protected deletion API
 ├── requirements.txt             # Backend dependencies
 ├── sarvam_translate.py          # Sarvam translation requests and key lookup
 ├── embeddings/
@@ -266,12 +274,13 @@ backend/
 ├── runtime/
 │   └── executor.py              # Python subprocess execution
 ├── tests/
+│   ├── test_executor.py         # Execution output and traceback contract checks
+│   ├── test_example_files.py    # Disk deletion and password checks using temporary copies
 │   └── test_repository_hygiene.py # Seed recovery and credential configuration tests
 └── vector_db/
     └── chroma_store.py          # Local vector store and semantic search
 
 examples/                        # Intentionally failing Python demos
-├── attribute_error.py
 ├── complex_call_stack_error.py
 ├── division_error.py
 ├── examples.py
@@ -296,13 +305,17 @@ src/
 └── utils/
     └── rcaEngine.js             # RCA helpers
 
+tests/
+├── workspace-state.test.cjs     # Workspace, disk refresh, naming, and preference checks
+└── python-worker.test.cjs       # Runtime readiness and error protocol checks
+
 .gitignore                       # Generated files, local credentials, and dependencies
 index.html                       # Active PyGlide interface and inline React application
 pyworker.js                      # Browser Python execution and REPL through Pyodide
 sw.js                            # Service worker for interactive Python input
 package.json                     # Frontend dependencies/scripts
 package-lock.json                # Locked frontend dependency versions
-vite.config.js                   # Vite server config
+vite.config.js                   # Vite server and runtime-worker build configuration
 postcss.config.js                # PostCSS configuration
 tailwind.config.js               # Tailwind configuration
 README.md                        # Setup and usage guide

@@ -53,11 +53,21 @@ sys.stderr = CustomStream('stderr')
     return pyodide;
 }
 
-pyodideReadyPromise = initPyodide();
+pyodideReadyPromise = initPyodide().then(pyodide => {
+    postMessage({ type: 'ready' });
+    return pyodide;
+}).catch(error => {
+    postMessage({ type: 'init_error', error: String(error) });
+    return null;
+});
 
 self.onmessage = async (e) => {
     const pyodide = await pyodideReadyPromise;
     const { id, type, code } = e.data;
+    if (!pyodide) {
+        postMessage({ type: 'error', id, error: 'Python runtime is unavailable. Retry the runtime before running code.' });
+        return;
+    }
     
     if (type === 'run') {
         try {

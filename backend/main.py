@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from example_files import router as example_files_router
 
 from embeddings.generator import generate_embedding
 from ingestion.bugsinpy import ingest_bugsinpy_dataset, ingest_mock_data
@@ -12,7 +13,8 @@ from rca.engine import analyze_error
 from sarvam_translate import translate_text
 from vector_db.chroma_store import add_bug_to_db, get_similar_bugs, traceback_collection
 
-app = FastAPI(title="Semantic AI Debugger API")
+app = FastAPI(title="PyGlide API")
+app.include_router(example_files_router)
 
 
 @app.on_event("startup")
@@ -70,7 +72,7 @@ class TranslationRequest(BaseModel):
 
 
 @app.post("/execute")
-async def execute(request: ExecuteRequest):
+def execute(request: ExecuteRequest):
     result = execute_code(request.code, request.filename)
 
     if not result.get("success", False):

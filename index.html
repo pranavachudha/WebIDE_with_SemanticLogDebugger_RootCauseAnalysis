@@ -148,15 +148,18 @@
 <body>
     <div id="root"></div>
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useLayoutEffect, useRef } = React;
 
         const safeGetStats = () => {
             try {
                 const data = localStorage.getItem('pyglide_stats');
                 if (data) {
                     const parsed = JSON.parse(data);
-                    if (parsed && parsed.concepts && typeof parsed.total === 'number') {
-                        return parsed;
+                    if (parsed?.concepts && typeof parsed.concepts === 'object' && !Array.isArray(parsed.concepts)) {
+                        const concepts = Object.fromEntries(Object.entries(parsed.concepts)
+                            .filter(([name, count]) => name && Number.isInteger(count) && count > 0)
+                            .map(([name, count]) => [name, Math.floor(count)]));
+                        return { concepts, total: Object.values(concepts).reduce((sum, count) => sum + count, 0) };
                     }
                 }
             } catch (e) {
@@ -168,18 +171,15 @@
         const safeSaveStats = (stats) => {
             try {
                 localStorage.setItem('pyglide_stats', JSON.stringify(stats));
+                window.dispatchEvent(new Event('pyglide-stats'));
             } catch (e) {
                 console.error("Stats save error:", e);
             }
         };
 
-        const TEST_FILES = [
-            { id: '1', name: 'n_queens_recursion.py', content: 'def is_safe(board, row, col, n):\n    for i in range(col):\n        if board[row][i]: return False\n    return True\n\ndef solve(board, col, n):\n    if col >= n: return True\n    for i in range(n):\n        if is_safe(board, i, col, n):\n            # ROOT CAUSE: board is initialized with n-1 rows\n            board[i][col] = 1 \n            if solve(board, col + 1, n): return True\n            board[i][col] = 0\n    return False\n\nn = 4\nboard = [[0 for _ in range(n)] for _ in range(n-1)]\nsolve(board, 0, n)' },
-            { id: '2', name: 'data_schema_audit.py', content: 'def process_user(user_data):\n    print(f"Auditing user: {user_data[\'id\']}")\n    # This key is missing in the second user\n    return user_data["metadata"]["last_login"]\n\nusers = [\n    {"id": 101, "metadata": {"last_login": "2024-05-01"}},\n    {"id": 102, "metadata": {}}\n]\n\nfor u in users:\n    process_user(u)' },
-            { id: '3', name: 'division_logic.py', content: 'def calculate_ratio(a, b):\n    return a / b\n\ndef process_set(val):\n    return calculate_ratio(val, 0)\n\nprocess_set(10)' },
-            { id: '4', name: 'complex_call_stack_error.py', content: 'def process_data_level_5(data):\n    total = sum(data)\n    average = total / 0\n    return average\n\ndef process_data_level_4(data):\n    filtered_data = [x for x in data if x > 0]\n    return process_data_level_5(filtered_data)\n\ndef process_data_level_3(data):\n    normalized = [x * 10 for x in data]\n    return process_data_level_4(normalized)\n\ndef process_data_level_2(data):\n    cleaned = [x if x is not None else 0 for x in data]\n    return process_data_level_3(cleaned)\n\ndef process_data_level_1(data):\n    if not data:\n        return 0\n    return process_data_level_2(data)\n\ndef main():\n    raw_input_data = [1, 2, None, 4, -1, 5]\n    print("Starting data processing pipeline...")\n    result = process_data_level_1(raw_input_data)\n    print(f"Result: {result}")\n\nif __name__ == "__main__":\n    main()' },
-            { id: '5', name: 'oop_complex_error.py', content: 'class DatabaseConnector:\n    def __init__(self):\n        self.connected = False\n        \n    def connect(self):\n        self.connected = True\n        \n    def execute_query(self, query):\n        if not self.connected:\n            raise ConnectionError("Not connected to database")\n        return self._internal_execute(query)\n        \n    def _internal_execute(self, query):\n        parser = QueryParser()\n        return parser.parse_and_run(query)\n\nclass QueryParser:\n    def parse_and_run(self, query):\n        ast = self._build_ast(query)\n        executor = QueryExecutor()\n        return executor.run(ast)\n        \n    def _build_ast(self, query):\n        return {"type": "SELECT", "target": query.split()[1]}\n\nclass QueryExecutor:\n    def run(self, ast):\n        target = ast["target"]\n        return self._fetch_data(target)\n        \n    def _fetch_data(self, target):\n        return self._read_from_disk(target)\n        \n    def _read_from_disk(self, target):\n        data_block = "Block_"\n        block_id = None\n        result = data_block + block_id\n        return result\n\nclass Application:\n    def __init__(self):\n        self.db = DatabaseConnector()\n        \n    def run(self):\n        self.db.connect()\n        self.process_user_request()\n        \n    def process_user_request(self):\n        user_manager = UserManager(self.db)\n        user_manager.get_user_info("alice")\n\nclass UserManager:\n    def __init__(self, db):\n        self.db = db\n        \n    def get_user_info(self, username):\n        query = f"SELECT * FROM users WHERE username=\'{username}\'"\n        result = self.db.execute_query(query)\n        return result\n\ndef main():\n    app = Application()\n    app.run()\n\nif __name__ == "__main__":\n    main()' }
-        ];
+        const EXAMPLES_FOLDER_ID = 'pyglide-examples';
+        const WORKSPACE_FOLDER_ID = 'pyglide-workspace';
+        const EXAMPLES_API = 'http://localhost:8000/workspace/examples';
 
         const extractExceptionType = (msg) => {
             const lines = msg.split('\n').map(l => l.trim()).filter(Boolean);
@@ -386,26 +386,21 @@
         };
 
         function AnalyticsPanel({ onBack }) {
-            const stats = safeGetStats();
+            const [stats, setStats] = useState(safeGetStats);
+            useEffect(() => {
+                const refresh = () => setStats(safeGetStats());
+                window.addEventListener('pyglide-stats', refresh);
+                window.addEventListener('storage', refresh);
+                return () => {
+                    window.removeEventListener('pyglide-stats', refresh);
+                    window.removeEventListener('storage', refresh);
+                };
+            }, []);
             const entries = Object.entries(stats.concepts).sort((a,b)=>b[1]-a[1]);
             const maxVal = Math.max(...Object.values(stats.concepts), 1);
             
             const topError = entries.length > 0 ? entries[0][0] : "None Yet";
             const secondError = entries.length > 1 ? entries[1][0] : null;
-
-            const allCategories = [
-                "MATHEMATICAL INCONSISTENCY",
-                "BOUNDARY VIOLATION",
-                "SCHEMA VIOLATION",
-                "IDENTIFIER FAILURE",
-                "SYNTAX ERROR",
-                "INDENTATION ERROR"
-            ];
-            
-            const errorKeys = entries.map(e => e[0].toUpperCase());
-            const perfectCategories = allCategories.filter(c => !errorKeys.includes(c));
-            const strengths = perfectCategories.length > 0 ? perfectCategories : (entries.length > 0 ? [entries[entries.length - 1][0]] : ["General Syntax"]);
-            const topStrength = strengths[0];
 
             const maps = {
                 "MATHEMATICAL INCONSISTENCY": {
@@ -476,26 +471,26 @@
             return (
                 <div className="stats-overlay">
                     <div style={{maxWidth:'1200px', margin:'0 auto'}}>
-                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'4rem'}}>
+                        <div className="aux-page-header" style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'2rem'}}>
                             <h1 style={{fontSize:'2.5rem', fontWeight:300, letterSpacing:'-0.02em'}}>PROGRAMMER FOCUS</h1>
                             <button className="btn btn-secondary" onClick={onBack}>RETURN TO EDITOR</button>
                         </div>
                         
-                        <div style={{display:'grid', gridTemplateColumns: '1fr 1fr', gap:'2rem', marginBottom:'3rem'}}>
+                        <div className="analytics-overview" style={{display:'grid', gap:'2rem', marginBottom:'2rem'}}>
                             <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
-                                <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em'}}>Core Strength</div>
-                                <div style={{fontSize:'2rem', fontWeight:800, color:'var(--success)', lineHeight:'1.4'}}>{topStrength}</div>
-                                <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>You have demonstrated high reliability in this area.</div>
+                                <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em'}}>Recorded Failures</div>
+                                <div style={{fontSize:'2rem', fontWeight:800, color:'var(--success)', lineHeight:'1.4'}}>{stats.total}</div>
+                                <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>Failures recorded in this browser, not a measure of overall coding ability.</div>
                             </div>
                             
                             <div style={{background:'rgba(255,255,255,0.02)', padding:'2.5rem', borderRadius:'20px', border:'1px solid var(--border)', display:'flex', flexDirection:'column', justifyContent:'center'}}>
                                 <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'0.5rem', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.1em'}}>Primary Focus Area</div>
                                 <div style={{fontSize:'2rem', fontWeight:800, color:'var(--error)', lineHeight:'1.4'}}>{topError}</div>
-                                {secondError && <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>Secondary Weakness: <span style={{color: '#fcd34d'}}>{secondError}</span></div>}
+                                {secondError && <div style={{fontSize:'0.9rem', color:'var(--text-dim)', marginTop:'0.75rem'}}>Next recorded category: <span style={{color: '#fcd34d'}}>{secondError}</span></div>}
                             </div>
                         </div>
 
-                        <div style={{display:'grid', gridTemplateColumns:'1fr 1.2fr', gap:'2.5rem'}}>
+                        <div className="analytics-details" style={{display:'grid', gap:'2rem'}}>
                             {/* Fault Statistics */}
                             <div style={{background:'rgba(255,255,255,0.015)', padding:'3rem', borderRadius:'24px', border:'1px solid var(--border)'}}>
                                 <h2 style={{fontSize:'1.1rem', fontWeight:800, color:'var(--text-dim)', letterSpacing:'0.1em', marginBottom:'2.5rem', textTransform:'uppercase'}}>Fault Statistics</h2>
@@ -523,7 +518,7 @@
                                 <h2 style={{fontSize:'1.2rem', fontWeight:800, color:'var(--accent)', letterSpacing:'0.1em', marginBottom:'2.5rem', textTransform:'uppercase'}}>Actionable Growth Plan</h2>
                                 
                                 <div style={{marginBottom:'3rem'}}>
-                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', fontWeight:700, textTransform:'uppercase', marginBottom:'0.5rem', letterSpacing:'0.1em'}}>Recommended Study Area</div>
+                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', fontWeight:700, textTransform:'uppercase', marginBottom:'0.5rem', letterSpacing:'0.1em'}}>Suggested Study Area</div>
                                     <div style={{fontSize:'1.8rem', fontWeight:600, color:'#fff'}}>{topMeta.focus}</div>
                                 </div>
 
@@ -542,114 +537,110 @@
             );
         }
 
-        function BenchmarksPanel({ onBack }) {
+        function BenchmarksPanel({ onBack, selectedModel, onSelect }) {
             return (
                 <div className="stats-overlay">
                     <div style={{maxWidth:'900px', margin:'0 auto'}}>
-                        <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'3rem'}}>
-                            <h1 style={{fontSize:'2.5rem', fontWeight:300, letterSpacing:'-0.02em'}}>MODEL BENCHMARKS</h1>
+                        <div className="aux-page-header">
+                            <h1>MODEL GUIDE</h1>
                             <button className="btn btn-secondary" onClick={onBack}>RETURN TO EDITOR</button>
                         </div>
-                        
-                        <div style={{display:'flex', flexDirection:'column', gap:'1.5rem'}}>
-                            {/* Qwen */}
-                            <div style={{background:'rgba(255,255,255,0.02)', border:'1px solid var(--border)', borderRadius:'16px', padding:'2rem', display:'grid', gridTemplateColumns:'2fr 1fr', gap:'2rem'}}>
-                                <div>
-                                    <div style={{fontSize:'1.2rem', fontWeight:800, color:'var(--accent)', marginBottom:'0.5rem'}}>Qwen 2.5 Coder 1.5B</div>
-                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'1rem'}}>986 MB • Default</div>
-                                    <p style={{fontSize:'0.9rem', lineHeight:'1.5', color:'#e2e8f0'}}>
-                                        Highly specialized for coding tasks. It excels at extremely fast, concise patches and root cause pinpointing. Its output is succinct, making it ideal for rapid iteration.
-                                    </p>
-                                    <div style={{marginTop:'1.5rem', padding:'12px', background:'rgba(255,255,255,0.03)', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.1)'}}>
-                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em'}}>Recommended Specs</div>
-                                        <div style={{fontSize:'0.9rem', fontWeight:600, color:'#e2e8f0', marginTop:'4px'}}>8GB RAM</div>
-                                    </div>
-                                </div>
-                                <div style={{display:'flex', flexDirection:'column', gap:'1rem', borderLeft:'1px solid var(--border)', paddingLeft:'2rem'}}>
+                        <p className="model-guide-note">Configured Ollama models for RCA feedback. Response times and output quality have not been benchmarked on this machine.</p>
+                        <div className="model-guide-list">
+                            {LOCAL_MODELS.map(model => (
+                                <section className="model-guide-card" key={model.id}>
                                     <div>
-                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Avg Response Time</div>
-                                        <div style={{fontSize:'1.5rem', fontWeight:800, color:'var(--success)'}}>~450ms</div>
+                                        <h2>{model.name}</h2>
+                                        <p>{model.description}</p>
+                                        <code>ollama pull {model.id}</code>
                                     </div>
-                                    <div>
-                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Output Quality</div>
-                                        <div style={{fontSize:'1.1rem', fontWeight:600, color:'#e2e8f0'}}>Precise / Direct</div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            {/* Llama 3.2 1B */}
-                            <div style={{background:'rgba(255,255,255,0.02)', border:'1px solid var(--border)', borderRadius:'16px', padding:'2rem', display:'grid', gridTemplateColumns:'2fr 1fr', gap:'2rem'}}>
-                                <div>
-                                    <div style={{fontSize:'1.2rem', fontWeight:800, color:'var(--accent)', marginBottom:'0.5rem'}}>Llama 3.2 1B</div>
-                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'1rem'}}>1.3 GB</div>
-                                    <p style={{fontSize:'0.9rem', lineHeight:'1.5', color:'#e2e8f0'}}>
-                                        A powerful and lightweight general-purpose model by Meta. Provides excellent step-by-step explanations and broad reasoning, though slightly more verbose than Qwen. Great for learning and debugging complex logic.
-                                    </p>
-                                    <div style={{marginTop:'1.5rem', padding:'12px', background:'rgba(255,255,255,0.03)', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.1)'}}>
-                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em'}}>Recommended Specs</div>
-                                        <div style={{fontSize:'0.9rem', fontWeight:600, color:'#e2e8f0', marginTop:'4px'}}>8GB RAM • 2GB VRAM</div>
-                                    </div>
-                                </div>
-                                <div style={{display:'flex', flexDirection:'column', gap:'1rem', borderLeft:'1px solid var(--border)', paddingLeft:'2rem'}}>
-                                    <div>
-                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Avg Response Time</div>
-                                        <div style={{fontSize:'1.5rem', fontWeight:800, color:'#fcd34d'}}>~850ms</div>
-                                    </div>
-                                    <div>
-                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Output Quality</div>
-                                        <div style={{fontSize:'1.1rem', fontWeight:600, color:'#e2e8f0'}}>Explanatory / Thorough</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Phi-4 Mini 3.8B */}
-                            <div style={{background:'rgba(255,255,255,0.02)', border:'1px solid var(--border)', borderRadius:'16px', padding:'2rem', display:'grid', gridTemplateColumns:'2fr 1fr', gap:'2rem'}}>
-                                <div>
-                                    <div style={{fontSize:'1.2rem', fontWeight:800, color:'var(--accent)', marginBottom:'0.5rem'}}>Phi-4 Mini 3.8B</div>
-                                    <div style={{fontSize:'0.85rem', color:'var(--text-dim)', marginBottom:'1rem'}}>2.5 GB</div>
-                                    <p style={{fontSize:'0.9rem', lineHeight:'1.5', color:'#e2e8f0'}}>
-                                        The largest of the three, featuring superior reasoning and instruction-following. It produces the most accurate and high-quality root cause analysis for deeply complex, multi-frame errors, at the cost of a slightly longer response time.
-                                    </p>
-                                    <div style={{marginTop:'1.5rem', padding:'12px', background:'rgba(255,255,255,0.03)', borderRadius:'8px', border:'1px solid rgba(255,255,255,0.1)'}}>
-                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase', letterSpacing:'0.05em'}}>Recommended Specs</div>
-                                        <div style={{fontSize:'0.9rem', fontWeight:600, color:'#e2e8f0', marginTop:'4px'}}>16GB RAM • 6GB VRAM</div>
-                                    </div>
-                                </div>
-                                <div style={{display:'flex', flexDirection:'column', gap:'1rem', borderLeft:'1px solid var(--border)', paddingLeft:'2rem'}}>
-                                    <div>
-                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Avg Response Time</div>
-                                        <div style={{fontSize:'1.5rem', fontWeight:800, color:'#f87171'}}>~1.4s</div>
-                                    </div>
-                                    <div>
-                                        <div style={{fontSize:'0.7rem', color:'var(--text-dim)', fontWeight:800, textTransform:'uppercase'}}>Output Quality</div>
-                                        <div style={{fontSize:'1.1rem', fontWeight:600, color:'#e2e8f0'}}>Advanced / Highly Accurate</div>
-                                    </div>
-                                </div>
-                            </div>
+                                    <button className="btn btn-secondary" onClick={() => onSelect(model.id)} disabled={selectedModel === model.id}>
+                                        {selectedModel === model.id ? 'SELECTED' : 'USE MODEL'}
+                                    </button>
+                                </section>
+                            ))}
                         </div>
+                        <p className="model-guide-note">Install the selected model in your local Ollama instance. Runtime and feedback quality depend on your hardware, model, and input.</p>
                     </div>
                 </div>
             );
         }
 
+        const readStoredValue = key => { try { return localStorage.getItem(key); } catch (error) { return null; } };
+
         const loadFiles = () => {
             try {
-                const saved = localStorage.getItem('pyglide_workspace');
-                if (saved) {
-                    const parsed = JSON.parse(saved);
-                    const existingNames = new Set(parsed.map(f => f.name));
-                    const newFiles = TEST_FILES.filter(f => !existingNames.has(f.name)).map(f => ({...f, type: 'file', parentId: null}));
-                    return [...parsed, ...newFiles];
-                }
-            } catch(e) {}
-            return TEST_FILES.map(f => ({...f, type: 'file', parentId: null}));
+                const parsed = JSON.parse(localStorage.getItem('pyglide_workspace') || '[]');
+                if (!Array.isArray(parsed)) return [];
+                const seen = new Set();
+                return parsed.filter(file => file && typeof file.id === 'string' && file.id && typeof file.name === 'string' && !seen.has(file.id) && seen.add(file.id))
+                    .map(file => ({ ...file, type: file.type === 'folder' ? 'folder' : 'file', parentId: file.parentId ?? null,
+                        ...(file.type !== 'folder' ? { content: typeof file.content === 'string' ? file.content : '' } : {}),
+                        ...(((file.id === '4' && file.name === 'complex_call_stack_error.py') ||
+                            (file.id === '5' && file.name === 'oop_complex_error.py')) && !file.examplePath
+                            ? { examplePath: file.name, isPredefined: true } : {}) }));
+            } catch(e) { return []; }
         };
         const loadTabs = () => {
             try {
                 const saved = localStorage.getItem('pyglide_tabs');
-                if (saved) return JSON.parse(saved);
+                if (saved) { const parsed = JSON.parse(saved); if (Array.isArray(parsed)) return parsed.filter(id => typeof id === 'string'); }
             } catch(e) {}
-            return ['1'];
+            return [];
+        };
+
+        const mergeExampleFiles = (existing, response) => {
+            const savedExamples = new Map(existing.filter(file => file.examplePath).map(file => [file.examplePath, file]));
+            // Relink the two matching samples from the old five-file workspace.
+            const legacyExamples = new Map(existing.filter(file =>
+                !file.examplePath && ((file.id === '4' && file.name === 'complex_call_stack_error.py') ||
+                (file.id === '5' && file.name === 'oop_complex_error.py'))).map(file => [file.name, file]));
+            const legacyIds = new Set([...legacyExamples.values()].map(file => file.id));
+            let result = existing.filter(file => !file.examplePath && !file.isExamplesFolder && !legacyIds.has(file.id));
+            const needsWorkspace = result.some(file => (file.type === 'file' && !file.parentId) ||
+                (!response.folder_exists && file.parentId === EXAMPLES_FOLDER_ID));
+            if (needsWorkspace && !result.some(file => file.id === WORKSPACE_FOLDER_ID)) {
+                result.unshift({ id: WORKSPACE_FOLDER_ID, name: 'workspace', type: 'folder', parentId: null, isOpen: true });
+            }
+            result = result.map(file => ((file.type === 'file' && !file.parentId) ||
+                (!response.folder_exists && file.parentId === EXAMPLES_FOLDER_ID))
+                ? { ...file, parentId: WORKSPACE_FOLDER_ID } : file);
+            if (!response.folder_exists) return result;
+            const previousFolder = existing.find(file => file.isExamplesFolder);
+            const folder = { id: EXAMPLES_FOLDER_ID, name: previousFolder?.name || 'examples', type: 'folder', parentId: null,
+                isOpen: previousFolder?.isOpen ?? true, isExamplesFolder: true };
+            const examples = response.files.map(file => {
+                const saved = savedExamples.get(file.examplePath) || legacyExamples.get(file.name);
+                const hasLocalEdits = saved && (saved.sourceContent === undefined || saved.content !== saved.sourceContent);
+                const parentId = saved?.parentId && result.some(node => node.id === saved.parentId && node.type === 'folder')
+                    ? saved.parentId : EXAMPLES_FOLDER_ID;
+                return { ...file, ...(saved || {}), type: 'file', parentId,
+                    content: hasLocalEdits ? saved.content : file.content, sourceContent: file.content,
+                    examplePath: file.examplePath, isPredefined: file.isPredefined };
+            });
+            return [folder, ...examples, ...result];
+        };
+
+        const validWorkspaceName = name => Boolean(name && name !== '.' && name !== '..' && !/[. ]$/.test(name) && !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name) && !/[\\/:*?"<>|\x00-\x1f]/.test(name));
+        const uniqueCopyName = (name, siblingNames) => {
+            const dot = name.lastIndexOf('.');
+            const stem = dot > 0 ? name.slice(0, dot) : name;
+            const extension = dot > 0 ? name.slice(dot) : '';
+            let number = 1;
+            let candidate;
+            do { candidate = `${stem}_copy${number === 1 ? '' : number}${extension}`; number++; }
+            while (siblingNames.some(existing => existing.toLowerCase() === candidate.toLowerCase()));
+            return candidate;
+        };
+
+        const subtreeIds = (id, files) => {
+            const ids = new Set([id]);
+            let count;
+            do {
+                count = ids.size;
+                files.forEach(file => { if (ids.has(file.parentId)) ids.add(file.id); });
+            } while (ids.size !== count);
+            return ids;
         };
 
         const parsePartialJSON = (raw) => {
@@ -776,9 +767,9 @@
         };
 
         const LOCAL_MODELS = [
-          { id: 'qwen2.5-coder:1.5b', name: 'Qwen 2.5 Coder 1.5B', description: 'Optimized for high-speed coding and precise explanation. Extremely lightweight.', size: '986 MB' },
-          { id: 'llama3.2:1b', name: 'Llama 3.2 1B', description: 'Ultra-fast general reasoning model by Meta, perfect for tight memory constraints.', size: '1.3 GB' },
-          { id: 'phi4-mini:latest', name: 'Phi-4 Mini 3.8B', description: 'Advanced instructions and code reasoning. Highly intelligent and resource-efficient.', size: '2.5 GB' }
+          { id: 'qwen2.5-coder:1.5b', name: 'Qwen 2.5 Coder 1.5B', description: 'Coding-focused option used for developer feedback.' },
+          { id: 'llama3.2:1b', name: 'Llama 3.2 1B', description: 'General-purpose option for explaining errors and fixes.' },
+          { id: 'phi4-mini:latest', name: 'Phi-4 Mini 3.8B', description: 'Alternative local reasoning option for developer feedback.' }
         ];
 
         const INDIAN_LANGUAGES = [
@@ -822,6 +813,7 @@
 
         const DEFAULT_LAYOUT = {
             explorerVisible: window.innerWidth > 620,
+            explorerWidth: 224,
             consoleVisible: true,
             analysisVisible: false,
             consoleHeight: 230,
@@ -835,7 +827,7 @@
                 key,
                 typeof fallback === 'boolean'
                     ? (typeof saved[key] === 'boolean' ? saved[key] : fallback)
-                    : (Number.isFinite(saved[key]) ? Math.max(key === 'analysisWidth' ? 280 : 100, Math.min(1200, saved[key])) : fallback)
+                    : (Number.isFinite(saved[key]) ? Math.max(key === 'analysisWidth' ? 280 : key === 'explorerWidth' ? 160 : 100, Math.min(10000, saved[key])) : fallback)
             ]));
         };
 
@@ -852,11 +844,84 @@
             return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
         }
 
+        function ViewportContextMenu({ menu, onClose, children }) {
+            const menuRef = useRef(null);
+            const [position, setPosition] = useState({ left: menu.x, top: menu.y });
+
+            useLayoutEffect(() => {
+                const element = menuRef.current;
+                const viewport = window.visualViewport;
+                const reposition = () => {
+                    const padding = 8;
+                    const leftEdge = (viewport?.offsetLeft || 0) + padding;
+                    const topEdge = (viewport?.offsetTop || 0) + padding;
+                    const width = Math.max(0, (viewport?.width || window.innerWidth) - padding * 2);
+                    const height = Math.max(0, (viewport?.height || window.innerHeight) - padding * 2);
+                    element.style.minWidth = `${Math.min(180, width)}px`;
+                    element.style.maxWidth = `${width}px`;
+                    element.style.maxHeight = `${height}px`;
+                    const bounds = element.getBoundingClientRect();
+                    const left = Math.max(leftEdge, Math.min(menu.x, leftEdge + width - bounds.width));
+                    const top = Math.max(topEdge, Math.min(menu.y, topEdge + height - bounds.height));
+                    setPosition(previous => previous.left === left && previous.top === top ? previous : { left, top });
+                };
+                const onKeyDown = event => { if (event.key === 'Escape') onClose(); };
+                reposition();
+                const observer = new ResizeObserver(reposition);
+                observer.observe(element);
+                window.addEventListener('resize', reposition);
+                viewport?.addEventListener('resize', reposition);
+                viewport?.addEventListener('scroll', reposition);
+                document.addEventListener('keydown', onKeyDown);
+                return () => {
+                    observer.disconnect();
+                    window.removeEventListener('resize', reposition);
+                    viewport?.removeEventListener('resize', reposition);
+                    viewport?.removeEventListener('scroll', reposition);
+                    document.removeEventListener('keydown', onKeyDown);
+                };
+            }, [menu, onClose]);
+
+            return ReactDOM.createPortal(
+                <div ref={menuRef} className="context-menu" style={position}
+                    onContextMenu={event => { event.preventDefault(); event.stopPropagation(); }}
+                    onClick={event => event.stopPropagation()}>
+                    {children}
+                </div>, document.body
+            );
+        }
+
         function App() {
-            const [selectedModel, setSelectedModel] = useState('qwen2.5-coder:1.5b');
-            const [files, setFiles] = useState(loadFiles());
-            const [activeId, setActiveId] = useState(() => localStorage.getItem('pyglide_activeId') || '1');
+            const [selectedModel, setSelectedModel] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('pyglide_model');
+                    if (LOCAL_MODELS.some(model => model.id === saved)) return saved;
+                } catch (error) {}
+                return 'qwen2.5-coder:1.5b';
+            });
+            const selectedModelRef = useRef(selectedModel);
+            const activeOperationRef = useRef(null);
+            const analysisEpochRef = useRef(0);
+            const translationRequestRef = useRef(null);
+            const runtimeStateRef = useRef({ ready: false, running: false });
+            const [isRunning, setIsRunning] = useState(false);
+            const [engineError, setEngineError] = useState('');
+            useEffect(() => { selectedModelRef.current = selectedModel; }, [selectedModel]);
+            const [files, setFiles] = useState(loadFiles);
+            const [activeId, setActiveId] = useState(() => readStoredValue('pyglide_activeId') || null);
+            const autoOpenInitialRef = useRef(readStoredValue('pyglide_tabs') === null);
             const [openTabs, setOpenTabs] = useState(loadTabs());
+            const openTabsRef = useRef(openTabs);
+            const filesRef = useRef(files);
+            const [storageError, setStorageError] = useState('');
+            const [examplesError, setExamplesError] = useState('');
+            const [examplesLoading, setExamplesLoading] = useState(true);
+            const examplesRequestRef = useRef(null);
+            const [deleteTarget, setDeleteTarget] = useState(null);
+            const [deletePassword, setDeletePassword] = useState('');
+            const [deleteError, setDeleteError] = useState('');
+            const [isDeleting, setIsDeleting] = useState(false);
+            const deletingRef = useRef(false);
             const [worker, setWorker] = useState(null);
             const [engineReady, setEngineReady] = useState(false);
             
@@ -880,8 +945,11 @@
             const consoleToggleRef = useRef(null);
 
             const clearAnalysis = () => {
+                analysisEpochRef.current += 1;
                 streamAbortControllerRef.current?.abort();
                 streamAbortControllerRef.current = null;
+                translationRequestRef.current?.abort();
+                setIsTranslating(false);
                 setRca(null);
             };
             const togglePane = (pane) => {
@@ -894,7 +962,6 @@
             };
             const showConsole = () => setLayout(previous => ({ ...previous, consoleVisible: true }));
             const hidePane = (pane) => {
-                if (pane === 'analysis') clearAnalysis();
                 setLayout(previous => ({ ...previous, [`${pane}Visible`]: false }));
                 if (pane === 'console') setConsoleMaximized(false);
                 (pane === 'analysis' ? analysisToggleRef : consoleToggleRef).current?.focus();
@@ -921,6 +988,9 @@
             }, []);
 
             const paneSizeLimits = (pane) => {
+                if (pane === 'explorer') {
+                    return { min: 160, max: Math.max(160, window.innerWidth <= 620 ? window.innerWidth * .9 : window.innerWidth - 280) };
+                }
                 const bounds = (pane === 'analysis' ? editorZoneRef : mainRef).current?.getBoundingClientRect();
                 const maximum = pane === 'analysis' ? (bounds?.width || window.innerWidth) * .58
                     : Math.max(80, ((bounds?.height || window.innerHeight) - 52) * .55);
@@ -928,49 +998,53 @@
             };
             const setPaneSize = (pane, value) => {
                 const limits = paneSizeLimits(pane);
-                setLayout(previous => ({ ...previous, [pane === 'analysis' ? 'analysisWidth' : 'consoleHeight']:
+                setLayout(previous => ({ ...previous, [pane === 'explorer' ? 'explorerWidth' : pane === 'analysis' ? 'analysisWidth' : 'consoleHeight']:
                     Math.round(Math.max(limits.min, Math.min(limits.max, value))) }));
             };
             const startPaneResize = (event, pane) => {
                 if (event.button !== 0) return;
                 event.preventDefault();
-                const panel = document.getElementById(pane === 'analysis' ? 'analysis-panel' : 'console-panel');
+                const panel = document.getElementById(pane === 'explorer' ? 'explorer-shell' : pane === 'analysis' ? 'analysis-panel' : 'console-panel');
                 const bounds = panel.getBoundingClientRect();
-                resizeRef.current = { pane, origin: pane === 'analysis' ? event.clientX : event.clientY,
-                    size: pane === 'analysis' ? bounds.width : bounds.height };
+                resizeRef.current = { pane, origin: pane !== 'console' ? event.clientX : event.clientY,
+                    size: pane !== 'console' ? bounds.width : bounds.height };
                 event.currentTarget.setPointerCapture(event.pointerId);
                 event.currentTarget.classList.add('is-resizing');
                 document.body.classList.add(`resizing-${pane}`);
             };
             const movePaneResize = (event) => {
                 const drag = resizeRef.current;
-                if (drag) setPaneSize(drag.pane, drag.size + drag.origin - (drag.pane === 'analysis' ? event.clientX : event.clientY));
+                if (drag) {
+                    const delta = (drag.pane !== 'console' ? event.clientX : event.clientY) - drag.origin;
+                    setPaneSize(drag.pane, drag.size + (drag.pane === 'explorer' ? delta : -delta));
+                }
             };
             const endPaneResize = (event) => {
                 resizeRef.current = null;
                 event.currentTarget.classList.remove('is-resizing');
-                document.body.classList.remove('resizing-analysis', 'resizing-console');
+                document.body.classList.remove('resizing-explorer', 'resizing-analysis', 'resizing-console');
                 if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
             };
             const resizeHandleProps = (pane) => {
                 const limits = paneSizeLimits(pane);
                 return {
                     role: 'separator', tabIndex: 0, 'aria-label': `Resize ${pane} panel`,
-                    'aria-orientation': pane === 'analysis' ? 'vertical' : 'horizontal',
-                    'aria-controls': pane === 'analysis' ? 'analysis-panel' : 'console-panel',
+                    'aria-orientation': pane !== 'console' ? 'vertical' : 'horizontal',
+                    'aria-controls': pane === 'explorer' ? 'explorer-panel' : pane === 'analysis' ? 'analysis-panel' : 'console-panel',
                     'aria-valuemin': Math.round(limits.min), 'aria-valuemax': Math.round(limits.max),
                     'aria-valuenow': Math.round(Math.min(limits.max, Math.max(limits.min,
-                        pane === 'analysis' ? layout.analysisWidth : layout.consoleHeight))),
+                        pane === 'explorer' ? layout.explorerWidth : pane === 'analysis' ? layout.analysisWidth : layout.consoleHeight))),
                     title: 'Drag to resize · Arrow keys to adjust · Double-click to reset',
                     onPointerDown: event => startPaneResize(event, pane), onPointerMove: movePaneResize,
                     onPointerUp: endPaneResize, onPointerCancel: endPaneResize, onLostPointerCapture: endPaneResize,
-                    onDoubleClick: () => setPaneSize(pane, pane === 'analysis' ? 420 : 230),
+                    onDoubleClick: () => setPaneSize(pane, pane === 'explorer' ? 224 : pane === 'analysis' ? 420 : 230),
                     onKeyDown: event => {
-                        const keys = pane === 'analysis' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
+                        const keys = pane !== 'console' ? ['ArrowLeft', 'ArrowRight'] : ['ArrowUp', 'ArrowDown'];
                         if (!keys.includes(event.key)) return;
                         event.preventDefault();
-                        const bounds = document.getElementById(pane === 'analysis' ? 'analysis-panel' : 'console-panel').getBoundingClientRect();
-                        setPaneSize(pane, (pane === 'analysis' ? bounds.width : bounds.height) + (event.key === keys[0] ? 20 : -20));
+                        const bounds = document.getElementById(pane === 'explorer' ? 'explorer-shell' : pane === 'analysis' ? 'analysis-panel' : 'console-panel').getBoundingClientRect();
+                        const direction = event.key === keys[0] ? -1 : 1;
+                        setPaneSize(pane, (pane !== 'console' ? bounds.width : bounds.height) + direction * (pane === 'explorer' ? 20 : -20));
                     }
                 };
             };
@@ -988,14 +1062,80 @@
             const [editorReady, setEditorReady] = useState(false);
             const [contextMenu, setContextMenu] = useState(null);
             const [renamingId, setRenamingId] = useState(null);
+            const renameCommittedRef = useRef(false);
             const [renamingName, setRenamingName] = useState('');
             
             const activeIdRef = useRef(activeId);
             useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+            useEffect(() => { filesRef.current = files; }, [files]);
+            useEffect(() => { openTabsRef.current = openTabs; }, [openTabs]);
+
+            const refreshExamples = async () => {
+                if (deletingRef.current) return;
+                examplesRequestRef.current?.abort();
+                const controller = new AbortController();
+                examplesRequestRef.current = controller;
+                setExamplesLoading(true);
+                try {
+                    const response = await fetch(EXAMPLES_API, { cache: 'no-store', signal: controller.signal });
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.detail || 'Could not load the example files.');
+                    if (controller.signal.aborted) return;
+                    const next = mergeExampleFiles(filesRef.current, data);
+                    const fileIds = new Set(next.filter(file => file.type === 'file').map(file => file.id));
+                    filesRef.current = next;
+                    setFiles(next);
+                    const validTabs = openTabsRef.current.filter(id => fileIds.has(id));
+                    if (fileIds.has(activeIdRef.current) && !validTabs.includes(activeIdRef.current)) validTabs.push(activeIdRef.current);
+                    setOpenTabs(validTabs);
+                    if (!fileIds.has(activeIdRef.current)) {
+                        const nextId = validTabs[0] || (autoOpenInitialRef.current ? next.find(file => file.type === 'file')?.id : null);
+                        setActiveId(nextId || null);
+                        if (nextId) setOpenTabs(previous => previous.includes(nextId) ? previous : [...previous, nextId]);
+                    }
+                    autoOpenInitialRef.current = false;
+                    setExamplesError('');
+                } catch (error) {
+                    if (error.name !== 'AbortError') setExamplesError('Examples unavailable. Start the backend and retry.');
+                } finally {
+                    if (!controller.signal.aborted) setExamplesLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                refreshExamples();
+                const onFocus = () => refreshExamples();
+                const onStorage = event => {
+                    if (event.key !== 'pyglide_workspace') return;
+                    const next = loadFiles();
+                    if (JSON.stringify(next) === JSON.stringify(filesRef.current)) return;
+                    filesRef.current = next;
+                    setFiles(next);
+                    const fileIds = new Set(next.filter(file => file.type === 'file').map(file => file.id));
+                    setOpenTabs(previous => previous.filter(id => fileIds.has(id)));
+                    if (!fileIds.has(activeIdRef.current)) setActiveId(null);
+                    refreshExamples();
+                };
+                window.addEventListener('focus', onFocus);
+                window.addEventListener('storage', onStorage);
+                return () => {
+                    examplesRequestRef.current?.abort();
+                    window.removeEventListener('focus', onFocus);
+                    window.removeEventListener('storage', onStorage);
+                };
+            }, []);
             
-            useEffect(() => { localStorage.setItem('pyglide_workspace', JSON.stringify(files)); }, [files]);
-            useEffect(() => { localStorage.setItem('pyglide_tabs', JSON.stringify(openTabs)); }, [openTabs]);
-            useEffect(() => { localStorage.setItem('pyglide_activeId', activeId || ''); }, [activeId]);
+            useEffect(() => {
+                try {
+                    localStorage.setItem('pyglide_workspace', JSON.stringify(files));
+                    localStorage.setItem('pyglide_tabs', JSON.stringify(openTabs));
+                    localStorage.setItem('pyglide_activeId', activeId || '');
+                    localStorage.setItem('pyglide_model', selectedModel);
+                    setStorageError('');
+                } catch (error) {
+                    setStorageError('Browser storage is full or unavailable. Download the workspace to keep your changes.');
+                }
+            }, [files, openTabs, activeId, selectedModel]);
             
             const [replInput, setReplInput] = useState('');
 
@@ -1030,9 +1170,12 @@
             }, [layout.consoleVisible, consoleMaximized]);
 
             useEffect(() => {
+                translationRequestRef.current?.abort();
+                translationRequestRef.current = null;
+                setIsTranslating(false);
                 setTranslatedRca('');
                 setTranslationError('');
-            }, [rca?.feedback, rca?.ins]);
+            }, [rca?.feedback, rca?.ins, selectedLanguage]);
 
             const translateGeneratedRca = async (feedback, fallbackSummary = '') => {
                 const text = formatFeedbackForTranslation(feedback, fallbackSummary);
@@ -1041,12 +1184,16 @@
                     return;
                 }
 
+                translationRequestRef.current?.abort();
+                const controller = new AbortController();
+                translationRequestRef.current = controller;
                 setIsTranslating(true);
                 setTranslationError('');
 
                 try {
                     const response = await fetch('http://localhost:8000/translate-feedback', {
                         method: 'POST',
+                        signal: controller.signal,
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
                             text,
@@ -1055,15 +1202,16 @@
                     });
 
                     const data = await response.json().catch(() => ({}));
+                    if (controller.signal.aborted) return;
                     if (!response.ok) {
                         throw new Error(data.detail || `Translation failed: ${response.status}`);
                     }
 
                     setTranslatedRca(data.translated_text || '');
                 } catch (err) {
-                    setTranslationError(err.message || String(err));
+                    if (!controller.signal.aborted) setTranslationError(err.message || String(err));
                 } finally {
-                    setIsTranslating(false);
+                    if (translationRequestRef.current === controller) setIsTranslating(false);
                 }
             };
 
@@ -1102,47 +1250,6 @@
                             setFiles(prev => prev.map(f => f.id === activeIdRef.current ? { ...f, content: val } : f));
                         });
                         
-                        // Register Pyodide Live Autocompletion
-                        window.monaco.languages.registerCompletionItemProvider('python', {
-                            triggerCharacters: ['.'],
-                            provideCompletionItems: async function(model, position) {
-                                const textUntilPosition = model.getValueInRange({
-                                    startLineNumber: position.lineNumber, startColumn: 1,
-                                    endLineNumber: position.lineNumber, endColumn: position.column
-                                });
-                                const match = textUntilPosition.match(/([a-zA-Z0-9_]+)\.$/);
-                                if (!match) return { suggestions: [] };
-                                const objName = match[1];
-                                const pyInstance = pyRef.current;
-                                if (!pyInstance) return { suggestions: [] };
-                                
-                                try {
-                                    pyInstance.globals.set('__autocomplete_obj__', objName);
-                                    const code = `
-import builtins
-try:
-    obj = globals().get(__autocomplete_obj__, getattr(builtins, __autocomplete_obj__, None))
-    if obj is not None:
-        ",".join([d for d in dir(obj) if not d.startswith('_')])
-    else:
-        ""
-except:
-    ""
-`;
-                                    const attrs = await pyInstance.runPythonAsync(code);
-                                    if (attrs) {
-                                        const suggestions = attrs.split(',').map(attr => ({
-                                            label: attr,
-                                            kind: window.monaco.languages.CompletionItemKind.Property,
-                                            insertText: attr
-                                        }));
-                                        return { suggestions };
-                                    }
-                                } catch (e) {}
-                                return { suggestions: [] };
-                            }
-                        });
-
                         setEditorReady(true);
                     });
                 }
@@ -1204,6 +1311,9 @@ except:
                 const file = event.target.files && event.target.files[0];
                 event.target.value = '';
                 if (!file) return;
+                clearAnalysis();
+                const uploadEpoch = analysisEpochRef.current;
+                const logModel = selectedModelRef.current;
                 showAnalysis();
                 setView('editor');
 
@@ -1226,6 +1336,7 @@ except:
                         logText = await file.text();
                     }
                 } catch (readErr) {
+                    if (uploadEpoch !== analysisEpochRef.current) return;
                     console.error("File reading error:", readErr);
                     setRca({
                         sourceType: 'log',
@@ -1248,6 +1359,7 @@ except:
                     return;
                 }
 
+                if (uploadEpoch !== analysisEpochRef.current) return;
                 if (!logText || !logText.trim()) {
                     setRca({
                         sourceType: 'log',
@@ -1283,6 +1395,7 @@ except:
                 setTranslationError('');
                 setRca({
                     sourceType: 'log',
+                    sourceModel: logModel,
                     logFilename: file.name,
                     logExcerpt: isExcel ? 'Excel binary sheet content (Base64)' : logText.slice(0, 1600),
                     frames: [{ line: 1, func: 'log', code: 'Scanning uploaded log for traceback and error signatures...' }],
@@ -1392,7 +1505,7 @@ except:
                             rca: analysis.rca,
                             similar_bugs: analysis.semantic_matches || [],
                             source_code: parsedLogText,
-                            model: selectedModel
+                            model: logModel
                         })
                     });
 
@@ -1510,6 +1623,7 @@ except:
                         term.write('>>> ');
 
                         term.onData(e => {
+                            if (!runtimeStateRef.current.ready && !isWaitingForInputRef.current) return;
                             if (!isWaitingForInputRef.current && !isReplRef.current) return;
 
                             switch (e) {
@@ -1544,7 +1658,7 @@ except:
                 }
             }, []);
 
-            const rebootWorker = (fromRun = false) => {
+            const rebootWorker = (fromRun = false, preserveConsole = false) => {
                 if (workerRef.current) {
                     workerRef.current.terminate();
                 }
@@ -1553,18 +1667,35 @@ except:
                 isReplRef.current = !fromRun;
                 currentLineRef.current = '';
                 
-                if (termInstance.current) {
+                if (termInstance.current && !preserveConsole) {
                     termInstance.current.clear();
                     termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n');
-                    if (!fromRun) {
-                        termInstance.current.write('>>> ');
-                    }
+                    termInstance.current.write('Loading Python runtime...\r\n');
                 }
                 
                 setEngineReady(false);
+                setEngineError('');
+                runtimeStateRef.current.ready = false;
                 const w = new Worker('/pyworker.js?t=' + Date.now());
                 w.onmessage = (e) => {
+                    if (workerRef.current !== w) return;
                     const { type, msg, uid, id, error, result } = e.data;
+                    if (type === 'ready') {
+                        runtimeStateRef.current.ready = true;
+                        setEngineReady(true);
+                        setEngineError('');
+                        if (isReplRef.current) termInstance.current?.write('>>> ');
+                        return;
+                    }
+                    if (type === 'init_error') {
+                        runtimeStateRef.current.ready = false;
+                        runtimeStateRef.current.running = false;
+                        setEngineReady(false);
+                        setIsRunning(false);
+                        setEngineError(error || 'Python runtime could not be loaded.');
+                        termInstance.current?.write(`\r\nPython runtime unavailable: ${error}\r\n`);
+                        return;
+                    }
                     if (type === 'stdout' || type === 'stderr') {
                         if (termInstance.current) {
                             const colorPrefix = type === 'stderr' ? '\x1b[31m' : '';
@@ -1572,6 +1703,8 @@ except:
                             termInstance.current.write(colorPrefix + msg.replace(/\n/g, '\r\n') + colorSuffix);
                         }
                     } else if (type === 'done' || type === 'error') {
+                        runtimeStateRef.current.running = false;
+                        setIsRunning(false);
                         if (type === 'error' && termInstance.current) {
                             termInstance.current.write('\x1b[31m' + error.replace(/\n/g, '\r\n') + '\x1b[0m\r\n');
                         }
@@ -1579,17 +1712,19 @@ except:
                             termInstance.current.write(String(result).replace(/\n/g, '\r\n') + '\r\n');
                         }
                         
-                        if (id === 'run_main' || id.startsWith('repl_')) {
+                        if (id === 'run_main' || id?.startsWith('repl_')) {
                             if (termInstance.current) termInstance.current.write('>>> ');
                             isReplRef.current = true;
-                            if (type === 'done' && id === 'run_main') {
+                            if (type === 'done' && id === 'run_main' && activeOperationRef.current?.epoch === analysisEpochRef.current) {
                                 setRca(null);
                             }
                         }
 
                         if (type === 'error') {
+                            const operation = activeOperationRef.current;
+                            if (!operation || operation.epoch !== analysisEpochRef.current) return;
                             showAnalysis();
-                            const currentCode = editorInstance.current ? editorInstance.current.getValue() : '';
+                            const currentCode = operation.code;
                             const base = analyze(error, currentCode);
 
                             if (streamAbortControllerRef.current) {
@@ -1602,6 +1737,8 @@ except:
 
                             setRca({
                                 ...base,
+                                sourceFilename: operation.filename,
+                                sourceModel: operation.model,
                                 feedback: null,
                                 llmLoading: true,
                                 mlError: null,
@@ -1626,7 +1763,7 @@ except:
                                     rca: null,
                                     similar_bugs: null,
                                     source_code: currentCode,
-                                    model: selectedModel
+                                    model: operation.model
                                 })
                             }).then(async (streamResponse) => {
                                 if (controller.signal.aborted) return;
@@ -1712,7 +1849,14 @@ except:
                 
                 setWorker(w);
                 workerRef.current = w;
-                setEngineReady(true);
+                w.onerror = event => {
+                    if (workerRef.current !== w) return;
+                    runtimeStateRef.current = { ready: false, running: false };
+                    setEngineReady(false);
+                    setIsRunning(false);
+                    setEngineError(event.message || 'Python worker failed.');
+                    event.preventDefault();
+                };
             };
 
             // Initialize Service Worker and Web Worker
@@ -1734,6 +1878,7 @@ except:
                     
                     navigator.serviceWorker.addEventListener('message', (event) => {
                         if (event.data && event.data.type === 'input_requested') {
+                            if (!runtimeStateRef.current.running) return;
                             showConsole();
                             pendingInputUidRef.current = event.data.uid;
                             isWaitingForInputRef.current = true;
@@ -1763,11 +1908,14 @@ except:
             };
 
             const run = async () => {
-                if (!editorInstance.current) return;
+                if (!editorInstance.current || !runtimeStateRef.current.ready || runtimeStateRef.current.running) return;
                 clearAnalysis();
                 showConsole();
                 setConsoleMaximized(false);
                 const currentCode = editorInstance.current.getValue() || '';
+                activeOperationRef.current = { code: currentCode, filename: filesRef.current.find(file => file.id === activeIdRef.current)?.name || 'Untitled.py', model: selectedModelRef.current, epoch: analysisEpochRef.current };
+                runtimeStateRef.current.running = true;
+                setIsRunning(true);
                 
                 
                 rebootWorker(true);
@@ -1788,7 +1936,19 @@ except:
                 }
                 
                 isReplRef.current = false;
+                activeOperationRef.current = { code: trimmed, filename: 'Console', model: selectedModelRef.current, epoch: analysisEpochRef.current };
+                runtimeStateRef.current.running = true;
+                setIsRunning(true);
                 workerRef.current.postMessage({ type: 'repl', id: 'repl_' + Date.now(), code: trimmed });
+            };
+
+            const stopRuntime = () => {
+                if (pendingInputUidRef.current) provideInput('').catch(() => {});
+                activeOperationRef.current = null;
+                runtimeStateRef.current.running = false;
+                setIsRunning(false);
+                termInstance.current?.write('\r\nExecution stopped.\r\n');
+                rebootWorker(false, true);
             };
 
 
@@ -1803,24 +1963,28 @@ except:
                     return;
                 }
                 let finalName = newItemName.trim();
-                if (creatingItem.type === 'file' && !finalName.endsWith('.py')) finalName += '.py';
+                if (creatingItem.type === 'file' && !finalName.toLowerCase().endsWith('.py')) finalName += '.py';
+                if (!validWorkspaceName(finalName)) { alert('Use a valid file or folder name.'); return; }
                 
-                const isDuplicate = files.some(f => f.parentId === creatingItem.parentId && f.name === finalName);
+                const parentId = creatingItem.parentId ?? (creatingItem.type === 'file' ? WORKSPACE_FOLDER_ID : null);
+                const isDuplicate = files.some(f => f.parentId === parentId && f.name.toLowerCase() === finalName.toLowerCase());
                 if (isDuplicate) {
                     alert(`An item named "${finalName}" already exists in this folder.`);
                     return;
                 }
 
-                const newId = Date.now().toString();
+                const newId = `user-${crypto.randomUUID()}`;
                 const newItem = { 
                     id: newId, 
                     name: finalName, 
                     type: creatingItem.type,
-                    parentId: creatingItem.parentId,
+                    parentId,
                     ...(creatingItem.type === 'file' ? { content: '' } : { isOpen: true })
                 };
                 
-                setFiles([...files, newItem]);
+                const base = parentId === WORKSPACE_FOLDER_ID && !files.some(file => file.id === WORKSPACE_FOLDER_ID)
+                    ? [...files, { id: WORKSPACE_FOLDER_ID, name: 'workspace', type: 'folder', parentId: null, isOpen: true }] : files;
+                setFiles([...base.map(file => file.id === parentId ? { ...file, isOpen: true } : file), newItem]);
                 if (creatingItem.type === 'file') openFile(newId);
                 setCreatingItem(null);
                 setNewItemName('');
@@ -1861,7 +2025,7 @@ except:
                 }
 
                 setFiles(prev => {
-                    const newFiles = [...prev];
+                    const newFiles = prev.map(file => ({ ...file }));
                     const dragIndex = newFiles.findIndex(f => f.id === dragId);
                     if (dragIndex === -1) return prev;
                     
@@ -1906,27 +2070,70 @@ except:
 
             const handleDeleteFile = (e, id) => {
                 e.stopPropagation();
-                if (window.confirm('Are you sure you want to delete this?')) {
-                    const getIdsToDelete = (targetId, allFiles) => {
-                        let ids = [targetId];
-                        allFiles.forEach(f => {
-                            if (f.parentId === targetId) {
-                                ids = ids.concat(getIdsToDelete(f.id, allFiles));
-                            }
+                const target = files.find(file => file.id === id);
+                if (!target) return;
+                const ids = subtreeIds(id, files);
+                if (target.isExamplesFolder) files.forEach(file => { if (file.examplePath) ids.add(file.id); });
+                const selected = files.filter(file => ids.has(file.id));
+                setDeleteTarget({ id, name: target.name, ids: [...ids],
+                    filenames: selected.filter(file => file.examplePath).map(file => file.examplePath),
+                    deleteFolder: Boolean(target.isExamplesFolder),
+                    requiresPassword: selected.some(file => file.isPredefined),
+                    fileCount: selected.filter(file => file.type === 'file').length });
+                setDeletePassword('');
+                setDeleteError('');
+                setContextMenu(null);
+            };
+
+            const cancelDeletion = () => {
+                if (isDeleting) return;
+                setDeleteTarget(null);
+                setDeletePassword('');
+                setDeleteError('');
+            };
+
+            const confirmDeletion = async (event) => {
+                event.preventDefault();
+                if (!deleteTarget || isDeleting) return;
+                deletingRef.current = true;
+                setIsDeleting(true);
+                setDeleteError('');
+                examplesRequestRef.current?.abort();
+                try {
+                    let deletedNames = [];
+                    if (deleteTarget.filenames.length || deleteTarget.deleteFolder) {
+                        const response = await fetch(`${EXAMPLES_API}/delete`, {
+                            method: 'POST', headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ filenames: deleteTarget.filenames,
+                                password: deleteTarget.requiresPassword ? deletePassword : undefined,
+                                delete_folder: deleteTarget.deleteFolder })
                         });
-                        return ids;
-                    };
-                    setFiles(prev => {
-                        const idsToDelete = getIdsToDelete(id, prev);
-                        return prev.filter(f => !idsToDelete.includes(f.id));
-                    });
-                    
-                    if (activeId === id) {
-                        const tabs = loadTabs().filter(t => t !== id);
-                        if (tabs.length > 0) openFile(tabs[0]);
-                        else setActiveId(null);
-                        localStorage.setItem('pyglide_tabs', JSON.stringify(tabs));
+                        const data = await response.json();
+                        if (!response.ok) {
+                            if (response.status === 403) setDeleteTarget(previous => previous ? { ...previous, requiresPassword: true } : previous);
+                            throw new Error(data.detail || 'The files could not be deleted.');
+                        }
+                        deletedNames = data.deleted || [];
                     }
+                    const ids = new Set(deleteTarget.ids);
+                    filesRef.current.forEach(file => { if (deletedNames.includes(file.examplePath)) ids.add(file.id); });
+                    const next = filesRef.current.filter(file => !ids.has(file.id));
+                    filesRef.current = next;
+                    // Persist immediately so deleted entries cannot return on reload.
+                    localStorage.setItem('pyglide_workspace', JSON.stringify(next));
+                    setFiles(next);
+                    const tabs = openTabsRef.current.filter(id => !ids.has(id));
+                    setOpenTabs(tabs);
+                    localStorage.setItem('pyglide_tabs', JSON.stringify(tabs));
+                    if (ids.has(activeIdRef.current)) setActiveId(tabs[0] || null);
+                    setDeleteTarget(null);
+                    setDeletePassword('');
+                } catch (error) {
+                    setDeleteError(error.message || 'Deletion failed. Start the backend and try again.');
+                } finally {
+                    deletingRef.current = false;
+                    setIsDeleting(false);
+                    setExamplesLoading(false);
                 }
             };
 
@@ -1946,20 +2153,25 @@ except:
             }, [contextMenu]);
 
             const handleDuplicate = (id) => {
-                const target = files.find(f => f.id === id);
+                const target = files.find(file => file.id === id);
                 if (!target) return;
-                const newId = Date.now().toString();
-                const copyName = target.name.includes('.') 
-                    ? target.name.replace('.', '_copy.') 
-                    : target.name + '_copy';
-                const newItem = { ...target, id: newId, name: copyName };
-                setFiles([...files, newItem]);
+                const ids = subtreeIds(id, files);
+                const mapping = new Map([...ids].map(key => [key, `user-${crypto.randomUUID()}`]));
+                const copyName = uniqueCopyName(target.name, files.filter(file => file.parentId === target.parentId).map(file => file.name));
+                const copies = files.filter(file => ids.has(file.id)).map(file => {
+                    const { examplePath, isPredefined, isExamplesFolder, sourceContent, ...ordinaryFile } = file;
+                    return { ...ordinaryFile, id: mapping.get(file.id), name: file.id === id ? copyName : file.name,
+                        parentId: file.id === id ? target.parentId : mapping.get(file.parentId),
+                        ...(file.type === 'folder' ? { isOpen: true } : {}) };
+                });
+                setFiles(previous => [...previous, ...copies]);
                 setContextMenu(null);
             };
 
             const handleRenameStart = (id) => {
                 const target = files.find(f => f.id === id);
                 if (target) {
+                    renameCommittedRef.current = false;
                     setRenamingId(id);
                     setRenamingName(target.name);
                 }
@@ -1967,8 +2179,17 @@ except:
             };
 
             const handleRenameSubmit = (id) => {
-                if (renamingName.trim() !== '') {
-                    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: renamingName.trim() } : f));
+                if (renameCommittedRef.current) return;
+                renameCommittedRef.current = true;
+                const target = files.find(file => file.id === id);
+                const name = renamingName.trim();
+                if (target && name !== target.name) {
+                    if (!validWorkspaceName(name) || files.some(file => file.id !== id && file.parentId === target.parentId && file.name.toLowerCase() === name.toLowerCase())) {
+                        setRenamingId(null);
+                        alert('Use a valid, unique name within this folder.');
+                        return;
+                    }
+                    setFiles(previous => previous.map(file => file.id === id ? { ...file, name } : file));
                 }
                 setRenamingId(null);
             };
@@ -1989,6 +2210,7 @@ except:
                                 <div className="file-item" 
                                     style={{ ...styleBase, display: 'flex', justifyContent: 'space-between', fontWeight: 600 }} 
                                     onClick={() => toggleFolder(f.id)}
+                                    onContextMenu={(e) => handleContextMenu(e, f)}
                                     draggable
                                     onDragStart={(e) => handleDragStart(e, f.id)}
                                     onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOverNodeId(f.id); }}
@@ -2002,7 +2224,7 @@ except:
                                                 autoFocus 
                                                 value={renamingName} 
                                                 onChange={e => setRenamingName(e.target.value)} 
-                                                onKeyDown={e => { if (e.key === 'Enter') handleRenameSubmit(f.id); if (e.key === 'Escape') setRenamingId(null); }} 
+                                                onKeyDown={e => { if (e.key === 'Enter') handleRenameSubmit(f.id); if (e.key === 'Escape') { renameCommittedRef.current = true; setRenamingId(null); } }}
                                                 onBlur={() => handleRenameSubmit(f.id)} 
                                                 style={{background:'transparent', border:'none', outline:'none', color:'var(--text)', width:'100%', fontFamily:'inherit', fontSize:'inherit'}}
                                             />
@@ -2034,7 +2256,7 @@ except:
                                             autoFocus 
                                             value={renamingName} 
                                             onChange={e => setRenamingName(e.target.value)} 
-                                            onKeyDown={e => { if (e.key === 'Enter') handleRenameSubmit(f.id); if (e.key === 'Escape') setRenamingId(null); }} 
+                                            onKeyDown={e => { if (e.key === 'Enter') handleRenameSubmit(f.id); if (e.key === 'Escape') { renameCommittedRef.current = true; setRenamingId(null); } }}
                                             onBlur={() => handleRenameSubmit(f.id)} 
                                             style={{background:'transparent', border:'none', outline:'none', color:'var(--text)', width:'100%', fontFamily:'inherit', fontSize:'inherit'}}
                                         />
@@ -2070,7 +2292,7 @@ except:
             };
 
             return (
-                <div className="layout" style={{ '--analysis-width': `${layout.analysisWidth}px`, '--console-height': `${layout.consoleHeight}px` }}>
+                <div className="layout" style={{ '--explorer-width': `${layout.explorerWidth}px`, '--analysis-width': `${layout.analysisWidth}px`, '--console-height': `${layout.consoleHeight}px` }}>
                     <input
                         ref={logFileInputRef}
                         className="log-upload-input"
@@ -2079,8 +2301,9 @@ except:
                         onChange={handleLogFileUpload}
                     />
                     {view === 'stats' && <AnalyticsPanel onBack={()=>setView('editor')} />}
-                    {view === 'benchmarks' && <BenchmarksPanel onBack={()=>setView('editor')} />}
-                    <aside className="sidebar" id="explorer-panel" aria-label="Explorer" hidden={!layout.explorerVisible}>
+                    {view === 'benchmarks' && <BenchmarksPanel onBack={()=>setView('editor')} selectedModel={selectedModel} onSelect={setSelectedModel} />}
+                    <div className="explorer-shell" id="explorer-shell" hidden={!layout.explorerVisible}>
+                    <aside className="sidebar" id="explorer-panel" aria-label="Explorer">
                         <div className="explorer-heading"><div className="logo" style={{marginBottom: 0}}>PYGLIDE</div><button className="panel-action" aria-label="Hide explorer" title="Hide Explorer (Ctrl+B)" onClick={() => togglePane('explorer')}><PaneIcon name="close"/></button></div>
                         
                         <div style={{display:'flex', flexDirection:'column', gap:'10px', padding:'0 10px', marginBottom:'2rem'}}>
@@ -2088,9 +2311,9 @@ except:
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 20V10M18 20V4M6 20v-4"/></svg>
                                 PROGRAMMER FOCUS
                             </button>
-                            <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>setView('benchmarks')} title="View Model Benchmarks">
+                            <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>setView('benchmarks')} title="View Local Model Guide">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--success)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
-                                MODEL BENCHMARKS
+                                MODEL GUIDE
                             </button>
                             <div style={{display:'flex', flexDirection:'column', gap:'4px', width:'100%'}}>
                                 <button className="btn btn-secondary" style={{width:'100%', display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'6px', justifyContent:'flex-start', cursor:'pointer'}} onClick={()=>logFileInputRef.current?.click()} title="Upload a log file for root cause analysis (accepts .log, .txt, .out, .err, .trace, .csv, .xlsx)">
@@ -2103,7 +2326,8 @@ except:
                             </div>
                         </div>
 
-                        <div 
+                        <div
+                            className="explorer-tools"
                             style={{
                                 display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px', paddingLeft:'10px', paddingRight:'10px',
                                 border: dragOverNodeId === 'root' ? '1px dashed var(--accent)' : '1px solid transparent',
@@ -2120,8 +2344,13 @@ except:
                                 <button onClick={downloadWorkspace} style={{background:'none', border:'none', color:'var(--text-dim)', cursor:'pointer', fontSize:'0.9rem', lineHeight:1}} title="Download Workspace">💾</button>
                             </div>
                         </div>
+                        {examplesLoading && <p className="workspace-note" role="status">Loading examples…</p>}
+                        {storageError && <p className="workspace-note workspace-error" role="alert">{storageError}</p>}
+                        {examplesError && <div className="workspace-note workspace-error" role="alert">{examplesError}<button className="panel-action" onClick={refreshExamples}>Retry</button></div>}
                         {renderTree(null)}
                     </aside>
+                    <div className="pane-resizer explorer-resizer" {...resizeHandleProps('explorer')}></div>
+                    </div>
                     <div className="main" ref={mainRef}>
                         <div className="toolbar">
                             <div className="runtime-actions">
@@ -2146,11 +2375,13 @@ except:
                                         <option key={m.id} value={m.id} style={{background: '#0a0a0c'}}>{m.name}</option>
                                     ))}
                                 </select>
-                                <button className="btn" onClick={run} disabled={!engineReady || !editorReady}>{engineReady && editorReady ? "EXECUTE RUNTIME" : "LOADING ENGINE..."}</button>
+                                <button className="btn" onClick={run} disabled={!engineReady || !editorReady || isRunning || !activeFile}>{isRunning ? 'RUNNING...' : engineError ? 'RUNTIME UNAVAILABLE' : engineReady && editorReady ? 'EXECUTE RUNTIME' : 'LOADING ENGINE...'}</button>
+                                {isRunning && <button className="btn btn-secondary" onClick={stopRuntime}>STOP</button>}
+                                {engineError && <button className="btn btn-secondary" onClick={() => rebootWorker()} title={engineError}>RETRY RUNTIME</button>}
                             </div>
                             <div className="workspace-actions">
-                            <div className="system-status" style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:800, letterSpacing:'1px', display:'flex', alignItems:'center', gap:'8px'}}>
-                                <div style={{width:6, height:6, borderRadius:'50%', background:'var(--success)'}}></div> SYSTEM STANDBY
+                            <div className="system-status" title="Python execution status" style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:800, letterSpacing:'1px', display:'flex', alignItems:'center', gap:'8px'}}>
+                                <div style={{width:6, height:6, borderRadius:'50%', background: engineError ? 'var(--error)' : 'var(--success)'}}></div> {engineError ? 'RUNTIME UNAVAILABLE' : !engineReady ? 'LOADING PYTHON' : isRunning ? 'RUNNING' : rca?.llmLoading ? 'ANALYZING' : 'PYTHON READY'}
                             </div>
                             <div className="layout-controls" role="group" aria-label="Workspace panels">
                                 <button className="panel-toggle" onClick={() => togglePane('explorer')} aria-label="Toggle explorer" aria-pressed={layout.explorerVisible} aria-controls="explorer-panel" aria-keyshortcuts="Control+B Meta+B" title="Toggle Explorer (Ctrl+B)">
@@ -2188,13 +2419,15 @@ except:
                                 <div className="pane-resizer analysis-resizer" {...resizeHandleProps('analysis')}></div>
                                 <div className="rca-header">
                                     <div className="pane-heading"><PaneIcon name="analysis"/><h2 className="rca-title" id="analysis-panel-title">{rca?.sourceType === 'log' ? 'Log Root Cause Analysis' : 'Root Cause Analysis'}</h2></div>
-                                    <button className="panel-action" onClick={() => hidePane('analysis')} aria-label="Close analysis" title="Close analysis and clear result"><PaneIcon name="close"/></button>
+                                    <button className="panel-action" onClick={() => hidePane('analysis')} aria-label="Hide analysis" title="Hide Analysis (Ctrl+Alt+A)"><PaneIcon name="close"/></button>
                                 </div>
                                 <div className="rca-body">
+                                {rca && (rca.sourceFilename || rca.logFilename) && <div className="analysis-origin">{rca.sourceType === 'log' ? 'Log' : 'Last run'}: {rca.sourceFilename || rca.logFilename}{rca.sourceModel && <span>Model: {rca.sourceModel}</span>}</div>}
                                 {!rca && <div className="panel-empty-state"><PaneIcon name="analysis"/><h2>No analysis yet</h2><p>Run a Python file or upload a log to inspect its root cause analysis here.</p><p>You can hide and reopen this panel anytime.</p></div>}
                                 {rca && (() => {
                                 const parsedStream = rca.llmLoading ? parsePartialJSON(rca.streamText) : {};
                                 const activeFeedback = rca.llmLoading ? parsedStream : (rca.feedback || {});
+                                const hasGeneratedFeedback = Boolean(formatFeedbackForTranslation(activeFeedback).trim());
                                 const isLogDebug = rca.sourceType === 'log';
                                 const traceFrames = Array.isArray(rca.frames) ? rca.frames : [];
                                 
@@ -2209,8 +2442,8 @@ except:
                                                     ? <div style={{fontSize:'0.65rem', color:'var(--text-dim)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
                                                         <div style={{width:6, height:6, borderRadius:'50%', background:'#a855f7', animation:'pulse 1s infinite'}}></div> STREAMING...
                                                       </div>
-                                                    : <div style={{fontSize:'0.65rem', color:'var(--success)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
-                                                        <div style={{width:6, height:6, borderRadius:'50%', background:'var(--success)'}}></div> READY
+                                                    : <div style={{fontSize:'0.65rem', color: rca.mlError ? 'var(--error)' : 'var(--success)', fontWeight:700, display:'flex', alignItems:'center', gap:'6px'}}>
+                                                        <div style={{width:6, height:6, borderRadius:'50%', background: rca.mlError ? 'var(--error)' : 'var(--success)'}}></div> {rca.mlError ? 'UNAVAILABLE' : 'READY'}
                                                       </div>
                                                 }
                                             </div>
@@ -2223,7 +2456,7 @@ except:
                                                 </div>
                                             )}
 
-                                            {activeFeedback && (
+                                            {hasGeneratedFeedback && (
                                                 <>
                                                     {activeFeedback.headline && (
                                                         <div className="feedback-block" style={{borderLeft: '2px solid #a855f7', paddingLeft: '1rem'}}>
@@ -2377,7 +2610,7 @@ except:
                             <div className="terminal-header">
                                 <div className="pane-heading"><PaneIcon name="console"/><h2 className="terminal-title" id="console-panel-title">SYSTEM CONSOLE & REPL</h2></div>
                                 <div className="pane-actions">
-                                    <button className="panel-action" onClick={() => { if(termInstance.current) { termInstance.current.clear(); termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n>>> '); } }} title="Clear console">CLEAR</button>
+                                    <button className="panel-action" onClick={() => { if(termInstance.current) { termInstance.current.clear(); termInstance.current.write('\x1bcPYGLIDE SYSTEM CONSOLE\r\n' + (isWaitingForInputRef.current ? 'Input: ' : isReplRef.current ? '>>> ' : '') + currentLineRef.current); } }} title="Clear console">CLEAR</button>
                                     <button className="panel-action" onClick={() => setConsoleMaximized(previous => !previous)} aria-label={consoleMaximized ? 'Restore console size' : 'Maximize console'} title={consoleMaximized ? 'Restore console size' : 'Maximize console'}><PaneIcon name={consoleMaximized ? 'restore' : 'maximize'}/></button>
                                     <button className="panel-action" onClick={() => hidePane('console')} aria-label="Hide console" title="Hide Console (Ctrl+J)"><PaneIcon name="close"/></button>
                                 </div>
@@ -2385,13 +2618,25 @@ except:
                             <div id="xterm-container" ref={termRef}></div>
                         </section>
                     </div>
+                    {deleteTarget && (
+                        <div className="delete-backdrop" onClick={cancelDeletion}>
+                            <form className="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" onSubmit={confirmDeletion} onClick={event => event.stopPropagation()} onKeyDown={event => { if (event.key === 'Escape') cancelDeletion(); }}>
+                                <h2 id="delete-dialog-title">Delete “{deleteTarget.name}”?</h2>
+                                <p>This permanently deletes {deleteTarget.fileCount > 1 ? `${deleteTarget.fileCount} files` : 'the selected item'}. Example files are also removed from the project’s examples folder.</p>
+                                {deleteTarget.deleteFolder && <p>This includes disk examples moved to other workspace folders.</p>}
+                                {deleteTarget.requiresPassword && <label className="delete-password-label">Example deletion password
+                                    <input autoFocus type="password" autoComplete="off" value={deletePassword} onChange={event => setDeletePassword(event.target.value)} disabled={isDeleting} required />
+                                </label>}
+                                {deleteError && <p className="delete-error" role="alert">{deleteError}</p>}
+                                <div className="delete-dialog-actions">
+                                    <button type="button" className="btn btn-secondary" onClick={cancelDeletion} disabled={isDeleting} autoFocus={!deleteTarget.requiresPassword}>Cancel</button>
+                                    <button type="submit" className="btn delete-button" disabled={isDeleting || (deleteTarget.requiresPassword && !deletePassword)}>{isDeleting ? 'Deleting…' : 'Delete permanently'}</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
                     {contextMenu && (
-                        <div 
-                            className="context-menu" 
-                            style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
-                            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                            onClick={(e) => e.stopPropagation()}
-                        >
+                        <ViewportContextMenu menu={contextMenu} onClose={() => setContextMenu(null)}>
                             <div className="context-menu-item" onClick={() => { handleRenameStart(contextMenu.file.id); }}>✎ Rename</div>
                             <div className="context-menu-item" onClick={() => { handleDuplicate(contextMenu.file.id); }}>⎘ Duplicate</div>
                             <div className="context-menu-divider"></div>
@@ -2403,7 +2648,7 @@ except:
                                 </>
                             )}
                             <div className="context-menu-item danger" onClick={(e) => { handleDeleteFile(e, contextMenu.file.id); setContextMenu(null); }}>🗑️ Delete</div>
-                        </div>
+                        </ViewportContextMenu>
                     )}
                 </div>
             );

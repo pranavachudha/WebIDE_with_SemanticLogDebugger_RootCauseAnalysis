@@ -3,11 +3,27 @@ import tempfile
 import os
 import sys
 import time
+import threading
 from parser.traceback_parser import extract_code_context, parse_traceback
 
 CURRENT_PROCESS = None
+_EXECUTION_LOCK = threading.Lock()
 
 def execute_code(code: str, filename: str = 'main.py'):
+    """Allow one subprocess at a time so stop requests always target the right run."""
+    if not _EXECUTION_LOCK.acquire(blocking=False):
+        message = 'Another Python execution is still running. Stop it or wait for it to finish.'
+        return {
+            'success': False, 'stdout': '', 'stderr': message, 'traceback': '', 'execution_time': '0.00s',
+            'error': {'type': 'ExecutionBusyError', 'message': message, 'traceback': '', 'line_number': -1},
+        }
+    try:
+        return _execute_code(code, filename)
+    finally:
+        _EXECUTION_LOCK.release()
+
+
+def _execute_code(code: str, filename: str = 'main.py'):
     """Executes python code in a subprocess and captures output and traceback."""
     suffix = os.path.splitext(filename)[1] or '.py'
     with tempfile.NamedTemporaryFile(mode='w', suffix=suffix, delete=False, encoding='utf-8') as f:
@@ -35,6 +51,10 @@ def execute_code(code: str, filename: str = 'main.py'):
             parsed_error = parse_traceback(error_output)
             context = extract_code_context(code, parsed_error.get('line_number', -1), radius=10)
             return {
+                'success': False,
+                'stdout': stdout,
+                'stderr': stderr,
+                'traceback': stderr,
                 'output': output,
                 'execution_time': f"{elapsed:.2f}s",
                 'error': {

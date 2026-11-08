@@ -3,7 +3,7 @@ import re
 from typing import Any
 
 
-FRAME_PATTERN = re.compile(r'File "(?P<file>.*?)", line (?P<line>\d+), in (?P<function>.+)')
+FRAME_PATTERN = re.compile(r'File "(?P<file>.*?)", line (?P<line>\d+)(?:, in (?P<function>.+))?')
 EXCEPTION_PATTERN = re.compile(r"^(?P<type>[A-Za-z_][\w.]*)(?::\s*(?P<message>.*))?$")
 
 
@@ -28,7 +28,7 @@ def parse_traceback(traceback_str: str) -> dict[str, Any]:
             frame = {
                 "file": match.group("file"),
                 "line_number": int(match.group("line")),
-                "function": match.group("function").strip(),
+                "function": (match.group("function") or "<module>").strip(),
             }
             result["call_stack"].append(frame)
 
